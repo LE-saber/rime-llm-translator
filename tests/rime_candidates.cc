@@ -6,8 +6,8 @@
 #include <cstdlib>
 
 int main(int argc, char** argv) {
-  if (argc != 3) {
-    std::cerr << "usage: rime-candidates USER_DATA_DIR SHARED_DATA_DIR\n";
+  if (argc != 3 && argc != 4) {
+    std::cerr << "usage: rime-candidates USER_DATA_DIR SHARED_DATA_DIR [EXPECTED_CANDIDATE]\n";
     return 2;
   }
   RimeApi* rime = rime_get_api();
@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     rime->process_key(session, c, 0);
   }
   RIME_STRUCT(RimeContext, ctx);
+  bool has_translation = argc == 3;
   bool valid = rime->get_context(session, &ctx);
   bool has_candidates = valid && ctx.menu.num_candidates > 0;
   if (valid) {
@@ -44,6 +45,13 @@ int main(int argc, char** argv) {
       if (ctx.menu.candidates[i].text)
         std::cout << "candidate " << i << ": " << ctx.menu.candidates[i].text << "\n";
     }
+    if (argc == 4) {
+      for (int i = 0; i < ctx.menu.num_candidates; ++i) {
+        if (ctx.menu.candidates[i].text &&
+            std::string(ctx.menu.candidates[i].text) == argv[3])
+          has_translation = true;
+      }
+    }
     rime->free_context(&ctx);
   }
   rime->destroy_session(session);
@@ -52,6 +60,10 @@ int main(int argc, char** argv) {
     std::cerr << "FAIL: Chinese candidate menu disappeared\n";
     return 1;
   }
-  std::cout << "PASS: Native Chinese candidates survived Rime filter\n";
+  if (!has_translation) {
+    std::cerr << "FAIL: injected English candidate was not produced\n";
+    return 1;
+  }
+  std::cout << "PASS: native Chinese candidates survived and expected translation was visible\n";
   return 0;
 }
