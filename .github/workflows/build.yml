@@ -17,7 +17,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml
+          sudo apt-get install -y lua5.4 python3-yaml g++ librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin
       - name: Syntax check
         run: |
           python3 -m py_compile src/rime_llm_translator.py
@@ -26,6 +26,18 @@ jobs:
           bash -n packaging/build-deb.sh
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Real Rime candidate integration (isolated HOME)
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra tests/rime_candidates.cc -lrime -o /tmp/rime-candidates-test
+          mkdir -p "$RUNNER_TEMP/rime-native" "$RUNNER_TEMP/rime-with-filter/lua"
+          cp lua/rime_llm_translator.lua "$RUNNER_TEMP/rime-with-filter/lua/"
+          printf 'patch:\n  "engine/filters/+":\n    - "lua_filter@*rime_llm_translator"\n' > "$RUNNER_TEMP/rime-with-filter/luna_pinyin.custom.yaml"
+          echo "== Baseline: real Rime without our filter =="
+          timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-native" /usr/share/rime-data
+          echo "== Real Rime with Lua filter =="
+          timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-with-filter" /usr/share/rime-data
+          echo "== Ensure test compiled and inserted real plugin =="
+          grep -q 'lua_filter@\\*rime_llm_translator' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
       - name: Build .deb
         run: bash packaging/build-deb.sh
       - name: Inspect installer
