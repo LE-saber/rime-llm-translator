@@ -1,125 +1,137 @@
--- Fail-open asynchronous multilingual candidate filter (IBus / librime-lua).
--- Crucial invariant: every upstream Rime candidate must be yielded unchanged.
--- No network activity. Translation cache failures must never interrupt typing.
+-- Rime offline-first MT + opt-in AI corrections.
+-- Every Rime candidate is yielded unchanged before any optional enrichment.
+-- Python worker performs translation out-of-process. No API calls in Lua.
 
-local function hex(s)
-  return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end))
-end
+local home = os.getenv("HOME") or ""
+local config_file = home .. "/.config/rime-llm-translator/config.ini"
+local cache_dir = home .. "/.cache/rime-llm-translator"
 
-local function unhex(s)
-  if #s % 2 ~= 0 or s:find("[^%x]") then return nil end
-  return (s:gsub("%x%x", function(pair) return string.char(tonumber(pair, 16)) end))
-end
-
-local function id_for(s)
-  local a, b = 5381, 0
-  for i=1,#s do
-    local n = s:byte(i)
-    a = (a * 33 + n) % 4294967296
-    b = (b * 65599 + n) % 4294967296
-  end
-  return string.format("%08x%08x", a, b)
-end
-
-local function config_at(path)
+local function config()
   local result, section = {}, ""
-  local f = io.open(path, "r")
+  local f = io.open(config_file, "r")
   if not f then return result end
   for line in f:lines() do
-    local new_section = line:match("^%s*%[([^%]]+)%]")
-    if new_section then section = new_section end
-    local key, value = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-    if key then result[section .. "." .. key] = value end
+    local s = line:match("^%s*%[([^%]]+)%]")
+    if s then section = s end
+    local k,v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+    if k then result[section .. "." .. k] = v end
   end
   f:close()
   return result
 end
 
-local function read_results(path)
-  local results = {}
-  local f = io.open(path, "r")
-  if not f then return results end
+local function encode(text)
+  return (text:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+local function decode(hex)
+  if #hex % 2 ~= 0 or hex:find("[^%x]") then return nil end
+  return (hex:gsub("%x%x", function(p) return string.char(tonumber(p,16)) end))
+end
+
+local function identifier(text, langs, opts)
+  local data = text .. "|" .. langs .. "|" ..
+      (opts["provider.model"] or "") .. "|" ..
+      (opts["provider.base_url"] or "")
+  local a,b = 5381,0
+  for i=1,#data do
+    local n = data:byte(i)
+    a=(a*33+n)%4294967296
+    b=(b*65599+n)%4294967296
+  end
+  return string.format("%08x%08x",a,b)
+end
+
+local function translations(path)
+  local found = {}
+  local f = io.open(path,"r")
+  if not f then return found end
   for line in f:lines() do
-    local code, encoded = line:match("^([a-z%-]+)%s+([%da-fA-F]+)$")
-    if code and encoded then results[code] = unhex(encoded) end
+    local lang, value = line:match("^([a-z%-]+)%s+([%da-fA-F]+)$")
+    if lang and value then found[lang] = decode(value) end
   end
   f:close()
-  return results
-end
-
-local function queue_request(spool, id, text)
-  local target = spool .. "/latest.req"
-  local old = io.open(target, "r")
-  if old then
-    local previous = old:read("*l")
-    old:close()
-    if previous == id then return end
-  end
-  local temp = spool .. "/latest." .. id .. ".tmp"
-  local f = io.open(temp, "w")
-  if not f then return end -- Service not installed: normal input continues.
-  f:write(id .. "\n" .. hex(text) .. "\n")
-  f:close()
-  os.rename(temp, target)
-end
-
-local function enrich(first)
-  local home = os.getenv("HOME")
-  if not home or home == "" then return {} end
-  local cfg = config_at(home .. "/.config/rime-llm-translator/config.ini")
-  if (cfg["translation.enabled"] or "false"):lower() ~= "true" then
-    return {}
-  end
-  local text = first.text or ""
-  local _, length = text:gsub("[^\128-\193]", "")
-  local minimum = tonumber(cfg["translation.min_characters"]) or 3
-  if length < minimum or #text > 600 or
-      not text:match("[\228-\233][\128-\191][\128-\191]") then
-    return {}
-  end
-  local languages = cfg["translation.languages"] or "en:English,ja:Japanese"
-  local identity = text .. "|" .. languages .. "|" ..
-    (cfg["provider.model"] or "") .. "|" .. (cfg["provider.base_url"] or "")
-  local id = id_for(identity)
-  local spool = home .. "/.cache/rime-llm-translator"
-  local results = read_results(spool .. "/results/" .. id .. ".res")
-  local found, incomplete = {}, false
-  for entry in languages:gmatch("[^,]+") do
-    local code = entry:match("^%s*([a-z][a-z%-]*):")
-    if code then
-      local translation = results[code]
-      if translation and translation ~= "" and translation ~= text then
-        found[#found+1] = { code=code, text=translation }
-      else
-        incomplete = true
-      end
-    end
-  end
-  if incomplete then queue_request(spool, id, text) end
   return found
 end
 
-local function safe_enrichment(first)
-  local ok, translated = pcall(enrich, first)
-  if not ok or type(translated) ~= "table" then return end
-  for _, item in ipairs(translated) do
-    -- Candidate construction can also fail on older librime versions.
-    local built, candidate = pcall(Candidate, "llm_" .. item.code,
-       first.start, first._end, item.text, " 🌐 " .. item.code:upper())
-    if built and candidate then yield(candidate) end
+local function request(filename, id, text)
+  local file = cache_dir .. "/" .. filename
+  local old = io.open(file,"r")
+  if old then
+    local last = old:read("*l")
+    old:close()
+    if last == id then return end
+  end
+  local tmp = cache_dir .. "/" .. filename .. "." .. id .. ".tmp"
+  local f = io.open(tmp,"w")
+  if not f then return end
+  f:write(id .. "\n" .. encode(text) .. "\n")
+  f:close()
+  os.rename(tmp, file)
+end
+
+local function current_source(first, env)
+  -- Optional: a user may highlight another Chinese candidate before AI hotkey.
+  if env and env.engine and env.engine.context then
+    local ok, cand = pcall(function()
+      return env.engine.context:get_selected_candidate()
+    end)
+    if ok and cand and cand.text and cand.type and
+        not tostring(cand.type):match("^llm_") then
+      return cand
+    end
+  end
+  return first
+end
+
+local function enrich(first, env)
+  if not home or home == "" then return end
+  local opts = config()
+  if (opts["translation.enabled"] or "false"):lower() ~= "true" then return end
+  local source = current_source(first,env)
+  local text = source.text or ""
+  local _,len = text:gsub("[^\128-\193]","")
+  local threshold = tonumber(opts["translation.min_characters"]) or 1
+  if len < threshold or #text > 1200 or
+      not text:match("[\228-\233][\128-\191][\128-\191]") then
+    return
+  end
+  local langs = opts["translation.languages"] or "en:English,ja:Japanese"
+  local id = identifier(text,langs,opts)
+  local mt = translations(cache_dir .. "/results-mt/" .. id .. ".res")
+  local ai = translations(cache_dir .. "/results-ai/" .. id .. ".res")
+  local missing_mt = false
+  for entry in langs:gmatch("[^,]+") do
+    local lang = entry:match("^%s*([a-z][a-z%-]*):")
+    if lang then
+      -- AI is shown only if the user explicitly requested it. An existing AI
+      -- correction supersedes its offline machine translation for this source.
+      local value = ai[lang] or mt[lang]
+      local origin = ai[lang] and "AI" or "MT"
+      if value and value ~= "" and value ~= text then
+        local comment = origin == "AI" and " ✦ AI · " or " 🌐 MT · "
+        local ok, candidate = pcall(Candidate,
+          "llm_" .. origin:lower() .. "_" .. lang,
+          source.start, source._end,
+          value, comment .. lang:upper())
+        if ok and candidate then yield(candidate) end
+      else
+        missing_mt=true
+      end
+    end
+  end
+  if missing_mt and (opts["translation.offline_enabled"] or "true"):lower() == "true" then
+    request("latest.req", id, text)
   end
 end
 
--- Prefer the idiomatic Rime iterator protocol; do not call iter() without state.
 return function(input, env)
-  local is_first = true
+  local first = true
   for candidate in input:iter() do
-    -- Yield original candidate BEFORE doing anything that can fail.
-    yield(candidate)
-    if is_first then
-      is_first = false
-      -- AI-related failures cannot stop subsequent upstream candidates.
-      safe_enrichment(candidate)
+    yield(candidate) -- Native Chinese candidates must never depend on translation.
+    if first then
+      first = false
+      pcall(enrich,candidate,env)
     end
   end
 end
