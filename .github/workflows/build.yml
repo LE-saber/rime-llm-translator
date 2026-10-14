@@ -36,6 +36,7 @@ jobs:
           echo "== Baseline: real Rime without our filter =="
           timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-native" /usr/share/rime-data
           echo "== Real Rime with active Lua filter and seeded translation =="
+          export RIME_LLM_TEST_DIAGNOSTICS=1
           export HOME="$RUNNER_TEMP/rime-test-home"
           python3 tests/seed_rime_cache.py "$HOME" mt
           test ! -e "$HOME/.cache/rime-llm-translator/ai.req"
