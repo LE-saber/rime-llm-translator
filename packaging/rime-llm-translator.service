@@ -1,0 +1,16 @@
+[Unit]
+Description=Rime LLM Translator background worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rime-llm-translator serve
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=default.target
