@@ -28,7 +28,8 @@ RESULT_DIR = CACHE_DIR / "results"
 LUA_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_translator.lua")
 RIME_DIR = Path.home() / ".config/ibus/rime"
 DEFAULT_LANGUAGES = "en:English,ja:Japanese"
-PATCH_KEY = "engine/filters/@before 0"
+PATCH_KEY = "engine/filters/+"
+LEGACY_PATCH_KEY = "engine/filters/@before 0"
 PATCH_VALUE = "lua_filter@*rime_llm_translator"
 
 def private_dir(path):
@@ -214,31 +215,83 @@ def serve():
             print(APP + ": " + type(exc).__name__ + ": " + str(exc), file=sys.stderr, flush=True)
             time.sleep(1)
 
-def safe_schema_patch():
-    try:
-        import yaml
-    except ImportError as exc:
-        raise RuntimeError("Install python3-yaml using apt first") from exc
+def _load_user_patch():
+    import yaml
     private_dir(RIME_DIR)
     target = RIME_DIR / "luna_pinyin.custom.yaml"
-    if target.exists():
-        content = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
-    else:
-        content = {}
+    content = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
+    content = content or {}
     if not isinstance(content, dict):
-        raise RuntimeError("Existing custom Rime config must be a YAML mapping")
+        raise RuntimeError("Rime custom schema should contain a YAML mapping")
     patch = content.setdefault("patch", {})
     if not isinstance(patch, dict):
-        raise RuntimeError("Existing patch block must be a YAML mapping")
-    existing = patch.get(PATCH_KEY)
-    if existing and existing != PATCH_VALUE:
-        raise RuntimeError("Conflicting Rime filter patch: " + str(existing))
-    if existing == PATCH_VALUE:
-        return
+        raise RuntimeError("Rime patch section must be a mapping")
+    return target, content, patch
+
+def _save_user_patch(target, data):
+    import yaml
     if target.exists():
         shutil.copy2(target, target.with_suffix(".yaml.bak"))
-    patch[PATCH_KEY] = PATCH_VALUE
-    atomically_write(target, yaml.safe_dump(content, allow_unicode=True, sort_keys=False))
+    atomically_write(target, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+
+def safe_schema_patch():
+    """Explicitly append an optional filter; never prepend to native filters."""
+    target, content, patch = _load_user_patch()
+    legacy = patch.get(LEGACY_PATCH_KEY)
+    if legacy and legacy != PATCH_VALUE:
+        raise RuntimeError("Conflicting legacy Rime filter patch")
+    patch.pop(LEGACY_PATCH_KEY, None)
+    appended = patch.get(PATCH_KEY, [])
+    if not isinstance(appended, list):
+        raise RuntimeError("Existing Rime filter append patch is not a list")
+    original = list(appended)
+    if PATCH_VALUE not in appended:
+        appended.append(PATCH_VALUE)
+    patch[PATCH_KEY] = appended
+    if appended != original or legacy == PATCH_VALUE:
+        _save_user_patch(target, content)
+
+def remove_schema_patch():
+    """Remove only translator-owned schema changes, preserving user settings."""
+    target = RIME_DIR / "luna_pinyin.custom.yaml"
+    if not target.exists():
+        return
+    _, content, patch = _load_user_patch()
+    changed = False
+    if patch.get(LEGACY_PATCH_KEY) == PATCH_VALUE:
+        patch.pop(LEGACY_PATCH_KEY)
+        changed = True
+    appended = patch.get(PATCH_KEY)
+    if isinstance(appended, list) and PATCH_VALUE in appended:
+        remaining = [x for x in appended if x != PATCH_VALUE]
+        if remaining:
+            patch[PATCH_KEY] = remaining
+        else:
+            patch.pop(PATCH_KEY)
+        changed = True
+    if changed:
+        if not patch:
+            content.pop("patch", None)
+        _save_user_patch(target, content)
+
+def enable():
+    """Opt-in only, after offline integration tests pass."""
+    install_user_files()
+    safe_schema_patch()
+    cfg = load_config()
+    cfg["translation"]["enabled"] = "true"
+    save_config(cfg)
+    print("Rime Lua filter enabled in Luna Pinyin configuration.")
+    print("Redeploy Rime and log out/in for changes to take effect.")
+
+def disable():
+    """Fail-safe revert without uninstalling Rime or deleting API key."""
+    remove_schema_patch()
+    cfg = load_config()
+    cfg["translation"]["enabled"] = "false"
+    save_config(cfg)
+    print("AI filter removed from user config; user API key retained.")
+    print("Redeploy Rime and log out/in to clear compiled Rime schema.")
 
 def install_user_files():
     if os.geteuid() == 0:
@@ -249,14 +302,14 @@ def install_user_files():
     private_dir(RESULT_DIR)
     private_dir(RIME_DIR / "lua")
     shutil.copy2(LUA_SOURCE, RIME_DIR / "lua/rime_llm_translator.lua")
-    safe_schema_patch()
+    # Do NOT patch a working input method during setup/sync.
 
 def sync():
     """Noninteractive update: retain provider configuration and API key."""
     install_user_files()
     subprocess.run(["systemctl", "--user", "restart",
                     "rime-llm-translator.service"], check=False)
-    print("Updated Rime Lua filter without changing API settings or key.")
+    print("Updated plugin files; did not enable the Rime filter.")
     print("Log out and in to reload Rime, or use its redeploy action.")
 
 def setup(args):
@@ -288,14 +341,18 @@ def setup(args):
         print("Background service enabled.")
     except (OSError, subprocess.CalledProcessError):
         print("Could not enable user service. Run: systemctl --user enable --now rime-llm-translator.service")
-    print("Setup complete. Log out and log in, then redeploy the Luna Pinyin Rime scheme.")
+    print("Setup complete. Rime is unchanged until you run: rime-llm-translator enable")
     print("Translation candidates appear after the asynchronous reply and next menu refresh.")
 
 def doctor():
     print("Configuration:", CONFIG_PATH, CONFIG_PATH.is_file())
     print("API key:", "configured" if KEY_PATH.is_file() else "missing")
     print("Lua plugin:", (RIME_DIR / "lua/rime_llm_translator.lua").is_file())
-    print("Rime schema:", (RIME_DIR / "luna_pinyin.custom.yaml").is_file())
+    try:
+        _, _, patch = _load_user_patch()
+        print("Rime filter enabled:", PATCH_VALUE in patch.get(PATCH_KEY, []) or patch.get(LEGACY_PATCH_KEY) == PATCH_VALUE)
+    except (ImportError, ValueError, RuntimeError, OSError) as exc:
+        print("Rime filter status: unavailable:", exc)
     print("Worker path:", LUA_SOURCE.exists())
     if CONFIG_PATH.exists():
         cfg = load_config()
@@ -306,7 +363,7 @@ def doctor():
 
 def main():
     ap = argparse.ArgumentParser(description="Rime multilingual translation input method")
-    ap.add_argument("command", choices=["setup", "sync", "serve", "doctor"], help="Action")
+    ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "doctor"], help="Action")
     args = ap.parse_args()
     os.umask(0o077)
     try:
@@ -314,6 +371,10 @@ def main():
             setup(args)
         elif args.command == "sync":
             sync()
+        elif args.command == "enable":
+            enable()
+        elif args.command == "disable":
+            disable()
         elif args.command == "serve":
             serve()
         else:

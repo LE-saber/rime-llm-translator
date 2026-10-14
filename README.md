@@ -20,12 +20,25 @@ Download the `.deb` from **Actions → Build Ubuntu installer → Artifacts**.
 Release tags `v*` also publish downloadable .deb assets.
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
+sudo apt install ./rime-llm-translator_0.1.0~preview3_all.deb
 rime-llm-translator setup
 ```
 
-Enter the API URL, model, languages and key as prompted, log out/in and redeploy
-the Luna Pinyin schema in IBus. Diagnose with:
+Enter the API URL, model, languages and key as prompted. Setup does NOT modify
+an active Rime schema. The filter is now strictly opt-in:
+
+```bash
+rime-llm-translator enable
+```
+
+Redeploy Luna Pinyin and log out/in. To undo just our Rime modifications:
+
+```bash
+rime-llm-translator disable
+```
+
+Redeploy Rime again to clear the compiled schema. Your API key and original
+dictionary are preserved. Diagnose with:
 
 ```bash
 rime-llm-translator doctor
@@ -35,8 +48,10 @@ systemctl --user status rime-llm-translator.service
 ## Upgrade from preview1
 
 Install the new `.deb`, then run `rime-llm-translator sync` as your
-normal desktop user. This copies the fixed Lua filter without asking for
-the API key or overwriting provider settings. Log out and in to reload Rime.
+normal desktop user. This copies the fixed Lua filter without changing API
+settings and **without enabling the filter**. Previously configured input
+schemes should first use `rime-llm-translator disable` and redeploy; only
+explicit `enable` adds the filter to the end of Luna Pinyin's filter chain.
 
 ## Configuration
 Stored in `~/.config/rime-llm-translator/config.ini`:
