@@ -1,96 +1,41 @@
-# Rime LLM Translator — Ubuntu 24.04 Preview
+# Rime LLM Translator — offline MT + explicit AI correction
 
-[中文安装指南](README_CN.md) · [Upstream: niyue/rime-ollama-translator](https://github.com/niyue/rime-ollama-translator)
+Ubuntu 24.04, IBus Rime, Luna Pinyin. **Normal typing never calls the AI API.**
 
-This repository preserves the original Ollama prototype and adds a **separate
-implementation for IBus + Rime + external OpenAI-compatible APIs**.
-No Ollama or local LLM is required.
+- **Offline machine translation** via [Argos Translate](https://github.com/argosopentech/argos-translate). Install the zh→en, zt→en and en→ja models once while online, then translate without network access.
+- Native Chinese candidates are always shown first. Offline results are marked `🌐 MT · EN` / `🌐 MT · JA`.
+- Press **Ctrl+Shift+Enter** while selecting a Chinese Rime candidate to queue a single OpenAI-compatible AI correction. Cached AI results supersede the corresponding MT output and are marked `✦ AI · EN` / `✦ AI · JA`.
+- Automatic offline MT begins with one Chinese character; only the latest input after a configurable short debounce is processed.
+- Important limit: the background worker does not directly notify a stationary Rime GUI candidate menu; a subsequent Rime composition refresh/key event may be needed to show new translations. No synchronous translation is run inside Rime.
 
-## Features
-- Preserve normal Chinese Pinyin candidates; add translated English, Japanese
-  and custom-language options (choose translation to commit it).
-- OpenAI-compatible Chat Completions endpoint including DeepSeek.
-- Background systemd user worker with typing debounce; no network activity
-  in the Rime Lua filter and no external Python dependencies at runtime.
-- API key stored privately in a user-only file, never embedded in Lua or package.
-- GitHub Actions builds a downloadable Ubuntu 24.04 Debian installer.
+## Ubuntu installation
 
-## Install
-Download the `.deb` from **Actions → Build Ubuntu installer → Artifacts**.
-Release tags `v*` also publish downloadable .deb assets.
+Download the `preview4` .deb from [Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml):
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview3_all.deb
+sudo apt install ./rime-llm-translator_0.2.0~preview4_all.deb
+
+# One-time Internet use to install Argos in a private Python venv + download models
+rime-llm-translator install-offline
+
+# Configure provider, target languages, API key (first time only)
 rime-llm-translator setup
-```
 
-Enter the API URL, model, languages and key as prompted. Setup does NOT modify
-an active Rime schema. The filter is now strictly opt-in:
+# Existing users should use sync instead of setup to retain settings
+rime-llm-translator sync
 
-```bash
+# Explicitly opt in: setup and sync never patch a working Rime input method
 rime-llm-translator enable
 ```
 
-Redeploy Luna Pinyin and log out/in. To undo just our Rime modifications:
+Redeploy Luna Pinyin and log out/in. If the native Chinese candidates disappear, use `rime-llm-translator disable` and redeploy Rime. This preserves dictionaries and provider secrets.
 
-```bash
-rime-llm-translator disable
-```
+Configure source language with `source_language = auto`, `zh`, or `zt` under `[translation]` in `~/.config/rime-llm-translator/config.ini`. Set `zt` if you primarily use Traditional Chinese. Configured targets default to `en:English,ja:Japanese`; other targets require Argos language packs installed separately.
 
-Redeploy Rime again to clear the compiled schema. Your API key and original
-dictionary are preserved. Diagnose with:
+## Safety, testing and limitations
 
-```bash
-rime-llm-translator doctor
-systemctl --user status rime-llm-translator.service
-```
+CI uses real Ubuntu 24.04 librime + librime-plugin-lua to verify Chinese candidates remain intact, MT/AI cache selection, and the manual shortcut dispatch. Python tests cover mock Argos translation and patch rollback. Actual downloaded Argos packages, live API calls, GUI/Wayland candidate repaint and CPU throughput remain desktop validation tasks; this is a preview.
 
-## Upgrade from preview1
+Do not enable AI on sensitive input: hotkey requests send the selected source text to the configured remote provider. Normal MT never sends text to any server.
 
-Install the new `.deb`, then run `rime-llm-translator sync` as your
-normal desktop user. This copies the fixed Lua filter without changing API
-settings and **without enabling the filter**. Previously configured input
-schemes should first use `rime-llm-translator disable` and redeploy; only
-explicit `enable` adds the filter to the end of Luna Pinyin's filter chain.
-
-## Configuration
-Stored in `~/.config/rime-llm-translator/config.ini`:
-
-```ini
-[provider]
-base_url = https://api.deepseek.com
-model = deepseek-chat
-
-[translation]
-enabled = true
-languages = en:English,ja:Japanese,fr:French
-min_characters = 3
-debounce_ms = 800
-timeout_seconds = 10
-max_tokens = 320
-```
-
-API key is stored at `~/.config/rime-llm-translator/api_key` (permissions 600).
-Restart the user service after editing provider settings and redeploy Rime for
-changes to candidate display settings.
-
-## Preview limitations and privacy
-
-The first translation result is asynchronous; Rime may not display it until
-**the next composition/menu refresh**. No guarantee of spontaneous UI refresh.
-Input Chinese text is transmitted to the configured external API service.
-AI translations can be incorrect. Disable with `enabled = false`.
-
-Only Luna Pinyin on Ubuntu 24.04 IBus Rime is targeted.
-Other schemas, Fcitx5 and Rime display environments need verification.
-
-## Development
-
-```bash
-python3 -m unittest discover -s tests -v
-bash packaging/build-deb.sh
-```
-
-New code is an independent implementation inspired by the
-[MIT-licensed upstream](https://github.com/niyue/rime-ollama-translator);
-original README_CN and Lua prototype remain in git history.
+See [中文说明](README_CN.md).
