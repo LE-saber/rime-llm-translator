@@ -4,10 +4,11 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <fstream>
 
 int main(int argc, char** argv) {
-  if (argc != 3 && argc != 4) {
-    std::cerr << "usage: rime-candidates USER_DATA_DIR SHARED_DATA_DIR [EXPECTED_CANDIDATE]\n";
+  if (argc < 3 || argc > 5) {
+    std::cerr << "usage: rime-candidates USER_DATA_DIR SHARED_DATA_DIR [EXPECTED_CANDIDATE [AI_REQUEST_PATH]]\n";
     return 2;
   }
   RimeApi* rime = rime_get_api();
@@ -53,6 +54,18 @@ int main(int argc, char** argv) {
       }
     }
     rime->free_context(&ctx);
+  }
+  if (argc >= 5) {
+    // X11 Return keysym; ShiftMask | ControlMask.
+    rime->process_key(session, 0xff0d, 5);
+    std::ifstream request(argv[4]);
+    if (!request.good()) {
+      std::cerr << "FAIL: AI hotkey did not enqueue an explicit request\n";
+      rime->destroy_session(session);
+      rime->finalize();
+      return 1;
+    }
+    std::cout << "PASS: AI hotkey wrote one explicit request\n";
   }
   rime->destroy_session(session);
   rime->finalize();
