@@ -22,6 +22,7 @@ jobs:
         run: |
           python3 -m py_compile src/rime_llm_translator.py
           luac5.4 -p lua/rime_llm_translator.lua
+          luac5.4 -p lua/rime_llm_ai_hotkey.lua
           lua5.4 tests/test_lua_filter.lua
           bash -n packaging/build-deb.sh
       - name: Unit tests
@@ -30,16 +31,22 @@ jobs:
         run: |
           g++ -std=c++17 -O2 -Wall -Wextra tests/rime_candidates.cc -lrime -o /tmp/rime-candidates-test
           mkdir -p "$RUNNER_TEMP/rime-native" "$RUNNER_TEMP/rime-with-filter/lua"
-          cp lua/rime_llm_translator.lua "$RUNNER_TEMP/rime-with-filter/lua/"
-          printf 'patch:\n  "engine/filters/+":\n    - "lua_filter@*rime_llm_translator"\n' > "$RUNNER_TEMP/rime-with-filter/luna_pinyin.custom.yaml"
+          cp lua/rime_llm_translator.lua lua/rime_llm_ai_hotkey.lua "$RUNNER_TEMP/rime-with-filter/lua/"
+          printf 'patch:\n  "engine/filters/+":\n    - "lua_filter@*rime_llm_translator"\n  "engine/processors/@before 0": "lua_processor@*rime_llm_ai_hotkey"\n' > "$RUNNER_TEMP/rime-with-filter/luna_pinyin.custom.yaml"
           echo "== Baseline: real Rime without our filter =="
           timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-native" /usr/share/rime-data
           echo "== Real Rime with active Lua filter and seeded translation =="
+          export RIME_LLM_TEST_DIAGNOSTICS=1
           export HOME="$RUNNER_TEMP/rime-test-home"
-          python3 tests/seed_rime_cache.py "$HOME"
+          python3 tests/seed_rime_cache.py "$HOME" mt
+          test ! -e "$HOME/.cache/rime-llm-translator/ai.req"
+          timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-with-filter" /usr/share/rime-data "Hello from Offline MT" "$HOME/.cache/rime-llm-translator/ai.req"
+          echo "== AI cache supersedes offline MT after explicit hotkey =="
+          python3 tests/seed_rime_cache.py "$HOME" ai
           timeout 90s /tmp/rime-candidates-test "$RUNNER_TEMP/rime-with-filter" /usr/share/rime-data "Hello from Rime AI"
           echo "== Ensure compiled schema includes the actual Lua filter =="
           grep -Fn 'lua_filter@*rime_llm_translator' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
+          grep -Fn 'lua_processor@*rime_llm_ai_hotkey' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
       - name: Build .deb
         run: bash packaging/build-deb.sh
       - name: Inspect installer

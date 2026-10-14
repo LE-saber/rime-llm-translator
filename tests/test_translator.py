@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 MODULE = Path(__file__).resolve().parents[1] / "src/rime_llm_translator.py"
 spec = importlib.util.spec_from_file_location("translator", MODULE)
@@ -61,10 +61,11 @@ class TranslatorTests(unittest.TestCase):
             record["body"] = json.loads(req.data)
             return Response({"choices":[{"message":{"content":
                              '{"en":"Hello","ja":"こんにちは"}'}}]})
-        result = tr.translate("你好", cfg, "test-secret", opener)
+        result = tr.translate("你好", cfg, "test-secret", opener, drafts={"en": "Helo"})
         self.assertEqual(result["en"], "Hello")
         self.assertIn("/chat/completions", record["url"])
         self.assertEqual(record["body"]["model"], "deepseek-chat")
+        self.assertEqual(json.loads(record["body"]["messages"][1]["content"])["offline_mt_drafts"]["en"], "Helo")
         self.assertTrue(record["headers"]["Authorization"].startswith("Bearer "))
         self.assertNotIn("test-secret", json.dumps(record["body"]))
 
@@ -76,6 +77,17 @@ class TranslatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tr.decode_request("../bad\n0a\n")
         self.assertIn("e38193", tr.encode_results({"ja": "こ"}))
+
+    def test_offline_argos_short_text_and_traditional(self):
+        cfg = tr.config_default()
+        mock_translate = Mock()
+        mock_translate.translate.side_effect = (
+            lambda text, src, dst: f"{src}:{dst}:{text}")
+        with patch.dict(sys.modules, {"argostranslate": Mock(translate=mock_translate)}):
+            self.assertEqual(tr.local_translate("你", cfg)["en"], "zh:en:你")
+            self.assertEqual(tr.local_translate("學", cfg)["ja"], "zt:ja:學")
+            cfg["translation"]["source_language"] = "zt"
+            self.assertEqual(tr.local_translate("好", cfg)["en"], "zt:en:好")
 
     def test_bad_answer(self):
         for content in ("not json", "[]", '{"x":"missing"}'):
@@ -99,11 +111,13 @@ class TranslatorTests(unittest.TestCase):
                 data = yaml.safe_load(custom.read_text(encoding="utf-8"))
                 self.assertEqual(data["patch"]["menu/page_size"], 9)
                 self.assertEqual(data["patch"][tr.PATCH_KEY], [tr.PATCH_VALUE])
+                self.assertEqual(data["patch"][tr.PROCESSOR_KEY], tr.PROCESSOR_VALUE)
                 self.assertNotIn(tr.LEGACY_PATCH_KEY, data["patch"])
                 tr.remove_schema_patch()
             data = yaml.safe_load(custom.read_text(encoding="utf-8"))
             self.assertEqual(data["patch"]["menu/page_size"], 9)
             self.assertNotIn(tr.PATCH_KEY, data["patch"])
+            self.assertNotIn(tr.PROCESSOR_KEY, data["patch"])
 
     def test_legacy_filter_patch_migration(self):
         try:
@@ -119,6 +133,7 @@ class TranslatorTests(unittest.TestCase):
             data = yaml.safe_load(custom.read_text(encoding="utf-8"))["patch"]
             self.assertNotIn(tr.LEGACY_PATCH_KEY, data)
             self.assertEqual(data[tr.PATCH_KEY], [tr.PATCH_VALUE])
+            self.assertEqual(data[tr.PROCESSOR_KEY], tr.PROCESSOR_VALUE)
 
 if __name__ == "__main__":
     unittest.main()
