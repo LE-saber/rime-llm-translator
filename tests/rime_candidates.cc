@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
       if (ctx.menu.candidates[i].text)
         std::cout << "candidate " << i << ": " << ctx.menu.candidates[i].text << "\n";
     }
-    if (argc == 4) {
+    if (argc >= 4) {
       for (int i = 0; i < ctx.menu.num_candidates; ++i) {
         if (ctx.menu.candidates[i].text &&
             std::string(ctx.menu.candidates[i].text) == argv[3])
