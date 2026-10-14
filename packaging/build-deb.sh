@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.1.0~preview1}"
+VERSION="${VERSION:-0.1.0~preview2}"
 PACKAGE="rime-llm-translator"
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT

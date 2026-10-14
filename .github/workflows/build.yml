@@ -1,7 +1,7 @@
 name: Build Ubuntu installer
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'fix/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -22,6 +22,7 @@ jobs:
         run: |
           python3 -m py_compile src/rime_llm_translator.py
           luac5.4 -p lua/rime_llm_translator.lua
+          lua5.4 tests/test_lua_filter.lua
           bash -n packaging/build-deb.sh
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v

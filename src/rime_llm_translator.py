@@ -240,6 +240,25 @@ def safe_schema_patch():
     patch[PATCH_KEY] = PATCH_VALUE
     atomically_write(target, yaml.safe_dump(content, allow_unicode=True, sort_keys=False))
 
+def install_user_files():
+    if os.geteuid() == 0:
+        raise RuntimeError("Run as your normal Ubuntu user, without sudo")
+    if not LUA_SOURCE.exists():
+        raise RuntimeError("Install the .deb package first")
+    private_dir(CACHE_DIR)
+    private_dir(RESULT_DIR)
+    private_dir(RIME_DIR / "lua")
+    shutil.copy2(LUA_SOURCE, RIME_DIR / "lua/rime_llm_translator.lua")
+    safe_schema_patch()
+
+def sync():
+    """Noninteractive update: retain provider configuration and API key."""
+    install_user_files()
+    subprocess.run(["systemctl", "--user", "restart",
+                    "rime-llm-translator.service"], check=False)
+    print("Updated Rime Lua filter without changing API settings or key.")
+    print("Log out and in to reload Rime, or use its redeploy action.")
+
 def setup(args):
     if os.geteuid() == 0:
         raise RuntimeError("Run setup as your normal Ubuntu user, without sudo")
@@ -259,11 +278,7 @@ def setup(args):
     key = getpass.getpass("API key (blank = keep current): ").strip()
     if key:
         atomically_write(KEY_PATH, key + "\n")
-    private_dir(CACHE_DIR)
-    private_dir(RESULT_DIR)
-    private_dir(RIME_DIR / "lua")
-    shutil.copy2(LUA_SOURCE, RIME_DIR / "lua/rime_llm_translator.lua")
-    safe_schema_patch()
+    install_user_files()
     try:
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "--user", "enable", "--now",
@@ -291,12 +306,14 @@ def doctor():
 
 def main():
     ap = argparse.ArgumentParser(description="Rime multilingual translation input method")
-    ap.add_argument("command", choices=["setup", "serve", "doctor"], help="Action")
+    ap.add_argument("command", choices=["setup", "sync", "serve", "doctor"], help="Action")
     args = ap.parse_args()
     os.umask(0o077)
     try:
         if args.command == "setup":
             setup(args)
+        elif args.command == "sync":
+            sync()
         elif args.command == "serve":
             serve()
         else:

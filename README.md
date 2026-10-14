@@ -20,7 +20,7 @@ Download the `.deb` from **Actions → Build Ubuntu installer → Artifacts**.
 Release tags `v*` also publish downloadable .deb assets.
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview1_all.deb
+sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
 rime-llm-translator setup
 ```
 
@@ -31,6 +31,12 @@ the Luna Pinyin schema in IBus. Diagnose with:
 rime-llm-translator doctor
 systemctl --user status rime-llm-translator.service
 ```
+
+## Upgrade from preview1
+
+Install the new `.deb`, then run `rime-llm-translator sync` as your
+normal desktop user. This copies the fixed Lua filter without asking for
+the API key or overwriting provider settings. Log out and in to reload Rime.
 
 ## Configuration
 Stored in `~/.config/rime-llm-translator/config.ini`:

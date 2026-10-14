@@ -17,7 +17,7 @@
 Ubuntu 24.04 下打开包含安装包的目录：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview1_all.deb
+sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
 rime-llm-translator setup
 ```
 
@@ -30,6 +30,17 @@ rime-llm-translator setup
 配置保存在 `~/.config/rime-llm-translator/config.ini`；API Key 单独存于 `api_key` 文件（仅用户可读）。
 
 安装器会把 Lua 过滤器放入 `~/.config/ibus/rime/lua/`，并备份、合并修改 `luna_pinyin.custom.yaml`，同时启动 systemd 用户服务。设置完成后注销、重新登录 Ubuntu，选择 Chinese (Rime) 并重新部署「朙月拼音」方案。
+
+## 从预览版 preview1 升级
+
+下载新的 preview2 安装包后，在解压目录执行：
+
+```bash
+sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
+rime-llm-translator sync
+```
+
+`sync` 不会重新询问 API Key，也不会覆盖已经保存的供应商配置。注销并登录一次，让 IBus 重新加载修复后的 Lua 过滤器。
 
 ## 检查和故障排查
 
