@@ -61,10 +61,11 @@ class TranslatorTests(unittest.TestCase):
             record["body"] = json.loads(req.data)
             return Response({"choices":[{"message":{"content":
                              '{"en":"Hello","ja":"こんにちは"}'}}]})
-        result = tr.translate("你好", cfg, "test-secret", opener)
+        result = tr.translate("你好", cfg, "test-secret", opener, drafts={"en": "Helo"})
         self.assertEqual(result["en"], "Hello")
         self.assertIn("/chat/completions", record["url"])
         self.assertEqual(record["body"]["model"], "deepseek-chat")
+        self.assertEqual(json.loads(record["body"]["messages"][1]["content"])["offline_mt_drafts"]["en"], "Helo")
         self.assertTrue(record["headers"]["Authorization"].startswith("Bearer "))
         self.assertNotIn("test-secret", json.dumps(record["body"]))
 
