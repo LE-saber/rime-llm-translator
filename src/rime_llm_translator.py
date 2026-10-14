@@ -117,23 +117,26 @@ def parse_answer(raw, codes):
         raise ValueError("Model returned no requested languages")
     return result
 
-def translate(text, cfg, api_key, opener=None):
+def translate(text, cfg, api_key, opener=None, drafts=None):
     langs = parse_languages(cfg["translation"]["languages"])
     url = chat_url(cfg["provider"]["base_url"])
     model = cfg["provider"]["model"].strip()
     if not model:
         raise ValueError("Model identifier is empty")
     instruction = (
-        "You are an accurate translation engine. Translate the user's Chinese text "
+        "You are a careful human-quality translation reviser. Translate the Chinese text "
         "into these languages: " +
         ", ".join("%s (%s)" % (code, label) for code,label in langs.items()) +
         '. Return ONLY a compact JSON object mapping each language code to its '
-        'translated string. Preserve meaning and register; do not add explanations.'
+        'translated string. Correct errors in the optional offline MT drafts if supplied; '
+        'preserve meaning and register; do not add explanations.'
     )
     body = json.dumps({
         "model": model,
         "messages": [{"role": "system", "content": instruction},
-                     {"role": "user", "content": text}],
+                     {"role": "user", "content": json.dumps(
+                         {"source": text, "offline_mt_drafts": drafts or {}},
+                         ensure_ascii=False)}],
         "temperature": 0.2,
         "max_tokens": cfg.getint("translation", "max_tokens", fallback=320),
         "stream": False
@@ -276,7 +279,17 @@ def serve():
                     key = KEY_PATH.read_text(encoding="utf-8").strip() if KEY_PATH.exists() else ""
                     if not key:
                         raise RuntimeError("AI hotkey requested but API key is missing")
-                    translations = translate(source, cfg, key)
+                    mt_draft = MT_RESULTS / (identifier + ".res")
+                    drafts = {}
+                    if mt_draft.exists():
+                        for line in mt_draft.read_text(encoding="utf-8").splitlines():
+                            fields = line.split(None, 1)
+                            if len(fields) == 2 and re.fullmatch(r"[0-9a-f]+", fields[1]):
+                                try:
+                                    drafts[fields[0]] = bytes.fromhex(fields[1]).decode("utf-8")
+                                except UnicodeDecodeError:
+                                    pass
+                    translations = translate(source, cfg, key, drafts=drafts)
                 else:
                     translations = local_translate(source, cfg)
                 atomically_write(output, encode_results(translations))
