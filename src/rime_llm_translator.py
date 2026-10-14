@@ -375,6 +375,11 @@ def enable():
     safe_schema_patch()
     cfg = load_config()
     cfg["translation"]["enabled"] = "true"
+    # The preview1–3 default suppressed one- and two-character translations.
+    # Migrate only the old default so upgraded installations handle short text.
+    if cfg["translation"].get("min_characters") == "3":
+        cfg["translation"]["min_characters"] = "1"
+        print("Migrated the old minimum length from 3 to 1 Chinese character.")
     save_config(cfg)
     print("Offline MT filter + Ctrl+Shift+Return AI hotkey enabled.")
     print("Redeploy Rime and log out/in for changes to take effect.")
