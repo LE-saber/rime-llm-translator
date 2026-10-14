@@ -1,119 +1,59 @@
-# RIME Ollama 翻译器
+# Rime LLM Translator — Ubuntu 24.04 中文安装指南
 
-一个基于 Ollama 的 [RIME](https://rime.im/) 输入法扩展，能够实时将中文翻译成日语。
+本仓库基于 [niyue/rime-ollama-translator](https://github.com/niyue/rime-ollama-translator) 的候选翻译设计，新开发支持 **IBus + Rime + 外部 OpenAI 兼容 API** 的安装版，**不依赖 Ollama**。
 
-效果截图：
+## 功能
 
-![效果截图](screenshot.png)
+- 输入拼音，保留原本中文候选，可从候选列表选择英、日等多语言译文上屏。
+- DeepSeek / OpenAI / 其他兼容 Chat Completions 的 API。
+- 中文候选识别、800 毫秒去抖、单用户后台翻译服务、翻译结果缓存。
+- 自定义目标语言，例如 `en:English,ja:Japanese,fr:French,ko:Korean`。
+- **注意**：远程翻译在后台进行，首次译文可能要等到**下一次候选菜单重新计算**才会显示；当前版本不能保证结果返回时立即主动刷新候选框。
 
-## 功能特性
+## 下载与安装
 
-- 🚀 实时翻译：输入中文时自动提供日语翻译候选
-- 🤖 AI 驱动：使用 Ollama 本地大语言模型进行翻译
-- 💾 智能缓存：自动缓存翻译结果，提高响应速度
-- 🔧 可配置：支持自定义模型、超时时间等参数
-- 📝 日志记录：可选的调试日志功能
+进入仓库 [Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，打开成功的 **Build Ubuntu installer** 构建，下载 Artifacts 中的 `rime-llm-translator-ubuntu24.04`，解压获得 `.deb`。
 
-## 系统要求
+Ubuntu 24.04 下打开包含安装包的目录：
 
-- RIME 输入法框架
-- Ollama 服务（本地运行）
-
-## 安装步骤
-
-1. **安装 Ollama**
-   ```bash
-   # macOS
-   brew install ollama
-   # 启动 Ollama 服务
-   ollama serve
-   ```
-2. **下载模型**
-   ```bash
-   # 下载默认模型（gemma3:1b）
-   ollama pull gemma3:1b
-   ```
-3. **配置 RIME**
-   - 将 `rime_ollama_translator.lua` 复制到你的 RIME 配置目录下的`lua`目录中
-   - 在你的 RIME 配置文件中添加以下内容 (以下是使用雾凇拼音的配置方式)
-   ```yaml
-   # 在你的输入方案配置文件(雾凇拼音中是`rime_ice.schema.yaml`)中添加
-   filters:
-     - lua_filter@*rime_ollama_translator
-   ```
-
-## 配置选项
-
-在 `rime_ollama_translator.lua` 文件中，你可以修改以下配置：
-
-```lua
-local config = {
-    host = "http://127.0.0.1:11434",  -- Ollama 服务地址
-    model = "gemma3:1b",              -- 使用的模型名称
-    min_length = 2,                   -- 最小翻译长度
-    timeout = 15,                     -- 请求超时时间(秒)
-    debug = false,                    -- 是否启用调试日志
-    debounce_delay = 1.8,            -- 防抖延迟时间
-    prompt = "请将中文「%s」翻译成自然口语的日语，仅输出翻译结果，不要解释"
-}
+```bash
+sudo apt install ./rime-llm-translator_0.1.0~preview1_all.deb
+rime-llm-translator setup
 ```
 
-## 使用方法
+`setup` 依次要求 API URL、模型 ID、目标语言和 API Key。DeepSeek 可填：
 
-1. 启动 RIME 输入法
-2. 输入中文文本
-3. 当输入长度达到配置的最小长度时，会自动显示日语翻译候选
-4. 翻译结果会以 🌐 图标标识，出现在候选列表的第二位
+- API base URL：`https://api.deepseek.com`
+- Model：`deepseek-chat`
+- Languages：`en:English,ja:Japanese`
 
-## 支持的模型
+配置保存在 `~/.config/rime-llm-translator/config.ini`；API Key 单独存于 `api_key` 文件（仅用户可读）。
 
-理论上支持任何 Ollama 模型，推荐使用：
-- `gemma3:1b`（默认，轻量快速）
-- `qwen3:1.7b`（中文友好）
+安装器会把 Lua 过滤器放入 `~/.config/ibus/rime/lua/`，并备份、合并修改 `luna_pinyin.custom.yaml`，同时启动 systemd 用户服务。设置完成后注销、重新登录 Ubuntu，选择 Chinese (Rime) 并重新部署「朙月拼音」方案。
 
-## 故障排除
+## 检查和故障排查
 
-### 常见问题
+```bash
+rime-llm-translator doctor
+systemctl --user status rime-llm-translator.service
+journalctl --user -u rime-llm-translator.service -n 30 --no-pager
+```
 
-1. **翻译不工作**
-   - 检查 Ollama 服务是否正在运行
-   - 确认模型已下载（`ollama list`）
-2. **响应缓慢**
-   - 尝试使用更小的模型
-   - 调整 `timeout` 参数
-   - 检查系统资源使用情况
-3. **启用调试日志**
-   - 将配置中的 `debug = false` 改为 `debug = true`
-   - 查看 `/tmp/rime_ollama_translator.log` 文件
+如果中文输入正常但译文未出现：检查服务、API 模型、网络与密钥是否正确，输入完成后等待约 1 秒，再触发一次候选菜单更新。首次结果可能需要再次编辑并恢复相同拼音才能进入缓存后的候选列表。
 
-### 日志文件
+配置修改后执行：
 
-调试日志保存在 `/tmp/rime_ollama_translator.log`，包含：
-- 翻译请求详情
-- API 响应内容
-- 错误信息
+```bash
+systemctl --user restart rime-llm-translator.service
+```
 
-## 性能优化
+要暂停远程翻译，把 `config.ini` 中 `enabled = true` 修改为 `enabled = false`。
 
-- **缓存机制**：相同文本的翻译会被缓存，避免重复请求
-- **最小长度限制**：只翻译达到最小长度的文本，减少无效请求
-- **超时控制**：防止长时间等待响应
+## 隐私与兼容性
 
-## 许可证
+- 自动翻译会把候选中文发送到你配置的模型供应商，请勿用于密码、密钥等敏感输入。
+- GitHub Actions 不需要也不保存你的 API Key。
+- 目标是 Ubuntu 24.04 + IBus + Rime + Lua 插件 + 朙月拼音。
+- 对其他输入方案、Wayland 的即时候选刷新，以及实机输入法交互仍需测试验证。
 
-本项目采用 MIT 许可证。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 更新日志
-
-### v0.2.0 (2025-07-06)
-- 利用 pending query 机制大幅提升性能：只有最终稳定的输入才会触发翻译请求，极大减少了无效请求和资源消耗。
-
-### v0.1.0 (2025-07-06)
-- 初始版本发布
-- 支持中文到日语翻译
-- 实现缓存机制
-- 添加配置选项 
+仓库原有 Ollama 版本仍保留在 `rime_ollama_translator.lua` 中，可供参考。原项目许可证以其 README 所述 MIT 为准。
