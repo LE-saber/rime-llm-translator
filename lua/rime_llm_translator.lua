@@ -72,8 +72,10 @@ local function enqueue(id, text)
   os.rename(tmp, path)
 end
 function M.filter(input, env)
-  local iterator = input:iter()
-  local first = iterator()
+  -- Rime's :iter() returns the iterator function AND a translation state.
+  -- Calling the function without its state empties/aborts the candidate stream.
+  local iterator, iterator_state = input:iter()
+  local first = iterator(iterator_state)
   if not first then return end
   yield(first)
   local opts = read_config()
@@ -100,7 +102,7 @@ function M.filter(input, env)
     if missing then enqueue(id, text) end
   end
   while true do
-    local candidate = iterator()
+    local candidate = iterator(iterator_state)
     if not candidate then break end
     yield(candidate)
   end
