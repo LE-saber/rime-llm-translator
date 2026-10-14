@@ -1,120 +1,75 @@
-[中文文档点此查看](README_CN.md)
+# Rime LLM Translator — Ubuntu 24.04 Preview
 
-# RIME Ollama Translator
+[中文安装指南](README_CN.md) · [Upstream: niyue/rime-ollama-translator](https://github.com/niyue/rime-ollama-translator)
 
-A [RIME](https://rime.im/) input method extension based on Ollama that provides real-time Chinese to Japanese translation.
-
-
-![Screenshot](screenshot.png)
+This repository preserves the original Ollama prototype and adds a **separate
+implementation for IBus + Rime + external OpenAI-compatible APIs**.
+No Ollama or local LLM is required.
 
 ## Features
+- Preserve normal Chinese Pinyin candidates; add translated English, Japanese
+  and custom-language options (choose translation to commit it).
+- OpenAI-compatible Chat Completions endpoint including DeepSeek.
+- Background systemd user worker with typing debounce; no network activity
+  in the Rime Lua filter and no external Python dependencies at runtime.
+- API key stored privately in a user-only file, never embedded in Lua or package.
+- GitHub Actions builds a downloadable Ubuntu 24.04 Debian installer.
 
-- 🚀 Real-time Translation: Automatically provides Japanese translation candidates when typing Chinese
-- 🤖 AI-Powered: Uses Ollama local large language models for translation
-- 💾 Smart Caching: Automatically caches translation results for improved response speed
-- 🔧 Configurable: Supports custom models, timeout settings, and other parameters
-- 📝 Logging: Optional debug logging functionality
+## Install
+Download the `.deb` from **Actions → Build Ubuntu installer → Artifacts**.
+Release tags `v*` also publish downloadable .deb assets.
 
-## System Requirements
-
-- RIME input method framework
-- Ollama service (running locally)
-
-## Installation
-
-1. **Install Ollama**
-   ```bash
-   # macOS
-   brew install ollama
-   # Start Ollama service
-   ollama serve
-   ```
-2. **Download Model**
-   ```bash
-   # Download default model (gemma3:1b)
-   ollama pull gemma3:1b
-   ```
-3. **Configure RIME**
-   - Copy `rime_ollama_translator.lua` to your RIME configuration directory
-   - Add the following to your RIME configuration file (for RIME ICE users):
-   ```yaml
-   # Add to your input scheme configuration file (for RIME ICE, it is `rime_ice.schema.yaml`)
-   filters:
-     - lua_filter@*rime_ollama_translator
-   ```
-
-## Configuration Options
-
-In the `rime_ollama_translator.lua` file, you can modify the following settings:
-
-```lua
-local config = {
-    host = "http://127.0.0.1:11434",  -- Ollama service address
-    model = "gemma3:1b",              -- Model name to use
-    min_length = 2,                   -- Minimum translation length
-    timeout = 15,                     -- Request timeout (seconds)
-    debug = false,                    -- Enable debug logging
-    debounce_delay = 1.8,            -- Debounce delay time
-    prompt = "请将中文「%s」翻译成自然口语的日语，仅输出翻译结果，不要解释"
-}
+```bash
+sudo apt install ./rime-llm-translator_0.1.0~preview1_all.deb
+rime-llm-translator setup
 ```
 
-## Usage
+Enter the API URL, model, languages and key as prompted, log out/in and redeploy
+the Luna Pinyin schema in IBus. Diagnose with:
 
-1. Start RIME input method
-2. Type Chinese text
-3. When the input length reaches the configured minimum length, Japanese translation candidates will automatically appear
-4. Translation results are marked with the 🌐 icon and appear as the second candidate in the list
+```bash
+rime-llm-translator doctor
+systemctl --user status rime-llm-translator.service
+```
 
-## Supported Models
+## Configuration
+Stored in `~/.config/rime-llm-translator/config.ini`:
 
-Theoretically supports any Ollama model. Recommended models:
-- `gemma3:1b` (default, lightweight and fast)
-- `qwen3:1.7b` (Chinese-friendly)
+```ini
+[provider]
+base_url = https://api.deepseek.com
+model = deepseek-chat
 
-## Troubleshooting
+[translation]
+enabled = true
+languages = en:English,ja:Japanese,fr:French
+min_characters = 3
+debounce_ms = 800
+timeout_seconds = 10
+max_tokens = 320
+```
 
-### Common Issues
+API key is stored at `~/.config/rime-llm-translator/api_key` (permissions 600).
+Restart the user service after editing provider settings and redeploy Rime for
+changes to candidate display settings.
 
-1. **Translation not working**
-   - Check if Ollama service is running
-   - Verify model is downloaded (`ollama list`)
-2. **Slow response**
-   - Try using a smaller model
-   - Adjust the `timeout` parameter
-   - Check system resource usage
-3. **Enable debug logging**
-   - Change `debug = false` to `debug = true` in configuration
-   - Check `/tmp/rime_ollama_translator.log` file
+## Preview limitations and privacy
 
-### Log Files
+The first translation result is asynchronous; Rime may not display it until
+**the next composition/menu refresh**. No guarantee of spontaneous UI refresh.
+Input Chinese text is transmitted to the configured external API service.
+AI translations can be incorrect. Disable with `enabled = false`.
 
-Debug logs are saved to `/tmp/rime_ollama_translator.log`, including:
-- Translation request details
-- API response content
-- Error messages
+Only Luna Pinyin on Ubuntu 24.04 IBus Rime is targeted.
+Other schemas, Fcitx5 and Rime display environments need verification.
 
-## Performance Optimization
+## Development
 
-- **Caching Mechanism**: Translations of identical text are cached to avoid duplicate requests
-- **Minimum Length Limit**: Only translates text that meets the minimum length requirement, reducing invalid requests
-- **Timeout Control**: Prevents long waiting times for responses
+```bash
+python3 -m unittest discover -s tests -v
+bash packaging/build-deb.sh
+```
 
-## License
-
-This project is licensed under the MIT License.
-
-## Contributing
-
-Issues and Pull Requests are welcome!
-
-## Changelog
-
-### v0.2.0 (2025-07-06)
-- Improved performance by introducing the pending query mechanism: only the final stable input triggers a translation request, greatly reducing unnecessary queries and resource usage.
-
-### v0.1.0 (2025-07-06)
-- Initial release
-- Support for Chinese to Japanese translation
-- Implemented caching mechanism
-- Added configuration options
+New code is an independent implementation inspired by the
+[MIT-licensed upstream](https://github.com/niyue/rime-ollama-translator);
+original README_CN and Lua prototype remain in git history.
