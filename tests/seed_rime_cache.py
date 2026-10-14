@@ -23,10 +23,11 @@ for byte in identity.encode("utf-8"):
     a = (a * 33 + byte) % (1 << 32)
     b = (b * 65599 + byte) % (1 << 32)
 identifier = f"{a:08x}{b:08x}"
-results = home / ".cache/rime-llm-translator/results"
+mode = sys.argv[2] if len(sys.argv) > 2 else "mt"
+results = home / (".cache/rime-llm-translator/results-" + mode)
 results.mkdir(parents=True, exist_ok=True)
 (results / (identifier + ".res")).write_text(
-    "en\t" + "Hello from Rime AI".encode().hex() + "\n" +
+    "en\t" + ("Hello from Rime AI" if mode == "ai" else "Hello from Offline MT").encode().hex() + "\n" +
     "ja\t" + "こんにちは".encode().hex() + "\n",
     encoding="utf-8"
 )
