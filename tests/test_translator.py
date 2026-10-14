@@ -96,9 +96,29 @@ class TranslatorTests(unittest.TestCase):
             with patch.object(tr, "RIME_DIR", root):
                 tr.safe_schema_patch()
                 tr.safe_schema_patch()
+                data = yaml.safe_load(custom.read_text(encoding="utf-8"))
+                self.assertEqual(data["patch"]["menu/page_size"], 9)
+                self.assertEqual(data["patch"][tr.PATCH_KEY], [tr.PATCH_VALUE])
+                self.assertNotIn(tr.LEGACY_PATCH_KEY, data["patch"])
+                tr.remove_schema_patch()
             data = yaml.safe_load(custom.read_text(encoding="utf-8"))
             self.assertEqual(data["patch"]["menu/page_size"], 9)
-            self.assertEqual(data["patch"][tr.PATCH_KEY], tr.PATCH_VALUE)
+            self.assertNotIn(tr.PATCH_KEY, data["patch"])
+
+    def test_legacy_filter_patch_migration(self):
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("Requires python3-yaml")
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t)
+            custom = root / "luna_pinyin.custom.yaml"
+            custom.write_text('patch:\n  "engine/filters/@before 0": "lua_filter@*rime_llm_translator"\n', encoding="utf-8")
+            with patch.object(tr, "RIME_DIR", root):
+                tr.safe_schema_patch()
+            data = yaml.safe_load(custom.read_text(encoding="utf-8"))["patch"]
+            self.assertNotIn(tr.LEGACY_PATCH_KEY, data)
+            self.assertEqual(data[tr.PATCH_KEY], [tr.PATCH_VALUE])
 
 if __name__ == "__main__":
     unittest.main()
