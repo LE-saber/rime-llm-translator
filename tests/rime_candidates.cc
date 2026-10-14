@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
   }
   RIME_STRUCT(RimeContext, ctx);
   bool has_translation = argc == 3;
+  bool labeled_translation = argc == 3;
   bool valid = rime->get_context(session, &ctx);
   bool has_candidates = valid && ctx.menu.num_candidates > 0;
   if (valid) {
@@ -49,8 +50,12 @@ int main(int argc, char** argv) {
     if (argc >= 4) {
       for (int i = 0; i < ctx.menu.num_candidates; ++i) {
         if (ctx.menu.candidates[i].text &&
-            std::string(ctx.menu.candidates[i].text) == argv[3])
+            std::string(ctx.menu.candidates[i].text) == argv[3]) {
           has_translation = true;
+          std::string label = std::string(argv[3]).find("Offline") != std::string::npos ? "MT" : "AI";
+          const char* comment = ctx.menu.candidates[i].comment;
+          labeled_translation = comment && std::string(comment).find(label) != std::string::npos;
+        }
       }
     }
     rime->free_context(&ctx);
@@ -73,8 +78,8 @@ int main(int argc, char** argv) {
     std::cerr << "FAIL: Chinese candidate menu disappeared\n";
     return 1;
   }
-  if (!has_translation) {
-    std::cerr << "FAIL: injected English candidate was not produced\n";
+  if (!has_translation || !labeled_translation) {
+    std::cerr << "FAIL: translation candidate or its MT/AI annotation missing\n";
     return 1;
   }
   std::cout << "PASS: native Chinese candidates survived and expected translation was visible\n";
