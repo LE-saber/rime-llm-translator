@@ -32,6 +32,11 @@ jobs:
           dpkg-deb -c dist/*.deb
           test "$(dpkg-deb -f dist/*.deb Architecture)" = all
           test "$(dpkg-deb -f dist/*.deb Package)" = rime-llm-translator
+      - name: Smoke-test installable package
+        run: |
+          sudo apt-get install -y ./dist/*.deb
+          command -v rime-llm-translator
+          rime-llm-translator doctor
       - uses: actions/upload-artifact@v4
         with:
           name: rime-llm-translator-ubuntu24.04
