@@ -58,8 +58,17 @@ local function dispatch(env)
 end
 
 return function(key, env)
-  if not key or key:repr() ~= "Control+Shift+Return" then return 2 end
+  if not key then return 2 end
+  -- Test modifiers independently; Rime may render Control+Shift or Shift+Control.
+  if not (key:ctrl() and key:shift() and not key:release()
+      and key.keycode == 0xff0d) then return 2 end
+  if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
+    io.stderr:write("Rime AI hotkey matched; dispatching\n")
+  end
   local ok, consumed=pcall(dispatch,env)
+  if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
+    io.stderr:write("Rime AI hotkey result: "..tostring(ok)..", "..tostring(consumed).."\n")
+  end
   if ok and consumed then return 1 end
   return 2
 end
