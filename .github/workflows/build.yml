@@ -1,0 +1,45 @@
+name: Build Ubuntu installer
+on:
+  push:
+    branches: [main, 'feat/**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 python3-yaml
+      - name: Syntax check
+        run: |
+          python3 -m py_compile src/rime_llm_translator.py
+          luac5.4 -p lua/rime_llm_translator.lua
+          bash -n packaging/build-deb.sh
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Build .deb
+        run: bash packaging/build-deb.sh
+      - name: Inspect installer
+        run: |
+          dpkg-deb -c dist/*.deb
+          test "$(dpkg-deb -f dist/*.deb Architecture)" = all
+          test "$(dpkg-deb -f dist/*.deb Package)" = rime-llm-translator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rime-llm-translator-ubuntu24.04
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb --generate-notes
