@@ -17,10 +17,11 @@
 Ubuntu 24.04 下打开包含安装包的目录：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
+sudo apt install ./rime-llm-translator_0.1.0~preview3_all.deb
 rime-llm-translator setup
 ```
 
+**安全变更：setup 仅配置 API、安装用户插件文件、启动后台服务，不再自动把 Lua 过滤器插入正在工作的 Rime 方案。** 必须确认离线与真实 Rime 候选回归测试通过后，由用户主动执行 `rime-llm-translator enable` 才启用候选翻译。
 `setup` 依次要求 API URL、模型 ID、目标语言和 API Key。DeepSeek 可填：
 
 - API base URL：`https://api.deepseek.com`
@@ -29,18 +30,32 @@ rime-llm-translator setup
 
 配置保存在 `~/.config/rime-llm-translator/config.ini`；API Key 单独存于 `api_key` 文件（仅用户可读）。
 
-安装器会把 Lua 过滤器放入 `~/.config/ibus/rime/lua/`，并备份、合并修改 `luna_pinyin.custom.yaml`，同时启动 systemd 用户服务。设置完成后注销、重新登录 Ubuntu，选择 Chinese (Rime) 并重新部署「朙月拼音」方案。
-
-## 从预览版 preview1 升级
-
-下载新的 preview2 安装包后，在解压目录执行：
+安装器会把 Lua 过滤器放入 `~/.config/ibus/rime/lua/`，默认不修改 Rime 方案。需要实际启用时运行：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.1.0~preview2_all.deb
+rime-llm-translator enable
+```
+
+它会备份并追加一个可撤销的过滤器到 `luna_pinyin.custom.yaml` **末尾**，不再放在首位。注销、重新登录 Ubuntu 并重新部署「朙月拼音」方案。
+
+如中文候选受影响，可随时运行：
+
+```bash
+rime-llm-translator disable
+```
+
+随后重新部署 Rime（可注销重新登录）。此操作只移除本插件添加的配置，不影响原生 Rime 词典与 API 密钥。
+
+## 从旧预览版升级
+
+下载新的 preview3 安装包后，在解压目录执行：
+
+```bash
+sudo apt install ./rime-llm-translator_0.1.0~preview3_all.deb
 rime-llm-translator sync
 ```
 
-`sync` 不会重新询问 API Key，也不会覆盖已经保存的供应商配置。注销并登录一次，让 IBus 重新加载修复后的 Lua 过滤器。
+`sync` 只更新 Lua 文件，不会修改原有 API Key 或自动启用输入法过滤器。若历史配置仍含旧过滤器，请先运行 `rime-llm-translator disable` 并重新部署；确认普通输入正常后再决定是否执行 `enable`。
 
 ## 检查和故障排查
 
@@ -65,6 +80,7 @@ systemctl --user restart rime-llm-translator.service
 - 自动翻译会把候选中文发送到你配置的模型供应商，请勿用于密码、密钥等敏感输入。
 - GitHub Actions 不需要也不保存你的 API Key。
 - 目标是 Ubuntu 24.04 + IBus + Rime + Lua 插件 + 朙月拼音。
-- 对其他输入方案、Wayland 的即时候选刷新，以及实机输入法交互仍需测试验证。
+- CI 新增独立用户目录下的 Ubuntu 24.04 **真实 librime + Lua 候选回归测试**。但 GUI/Wayland 即时菜单刷新仍需实机验证。
+- 默认禁用 AI 候选过滤器，避免覆盖已能正常使用的中文输入。
 
 仓库原有 Ollama 版本仍保留在 `rime_ollama_translator.lua` 中，可供参考。原项目许可证以其 README 所述 MIT 为准。
