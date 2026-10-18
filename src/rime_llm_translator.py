@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from urllib import request, error
 from urllib.parse import urlparse
@@ -23,8 +24,14 @@ LATEST_PATH = CACHE_DIR / "latest.req"
 MT_RESULTS = CACHE_DIR / "results-mt"
 AI_RESULTS = CACHE_DIR / "results-ai"
 AI_REQUEST = CACHE_DIR / "ai.req"
-VENV_DIR = Path.home() / ".local/share/rime-llm-translator/venv"
+DATA_DIR = Path.home() / ".local/share" / APP
+VENV_DIR = DATA_DIR / "venv"
 VENV_PYTHON = VENV_DIR / "bin/python"
+OFFLINE_CONSTRAINTS = Path("/usr/share/rime-llm-translator/offline-constraints.txt")
+CPU_RUNTIME_CHECK = Path("/usr/share/rime-llm-translator/check_cpu_runtime.py")
+CPU_TORCH = "torch==2.8.0+cpu"
+ARGOS_REQUIREMENT = "argostranslate==1.11.0"
+OFFLINE_MIN_FREE = 3 * 1024 ** 3
 HOTKEY_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_ai_hotkey.lua")
 PROCESSOR_KEY = "engine/processors/@before 0"
 PROCESSOR_VALUE = "lua_processor@*rime_llm_ai_hotkey"
@@ -223,14 +230,52 @@ def local_translate(text, cfg):
         raise RuntimeError("No offline Argos language models available")
     return result
 
-def install_offline_models():
-    """One-time internet installation. Translation itself remains offline."""
+def install_offline_runtime():
+    """Pin CPU wheels before resolving Argos' transitive torch dependency."""
     if os.geteuid() == 0:
         raise RuntimeError("Run install-offline as your normal Ubuntu user")
+    if not OFFLINE_CONSTRAINTS.is_file() or not CPU_RUNTIME_CHECK.is_file():
+        raise RuntimeError("CPU runtime installation files are missing; reinstall the .deb")
+    private_dir(DATA_DIR)
+    available = shutil.disk_usage(DATA_DIR).free
+    if available < OFFLINE_MIN_FREE:
+        raise RuntimeError("Offline installation needs at least 3 GiB free on your home filesystem "
+                           "(currently %.1f GiB). Clear old pip downloads or run repair-offline "
+                           "to remove this app's failed environment." % (available / 1024 ** 3))
     if not VENV_PYTHON.is_file():
         subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True)
-    subprocess.run([str(VENV_PYTHON), "-m", "pip", "install",
-                    "argostranslate>=1.9,<2"], check=True)
+    # Keep temporary downloads on the checked filesystem and do not duplicate
+    # hundreds of MB into the user's shared pip cache.
+    with tempfile.TemporaryDirectory(prefix="install-", dir=DATA_DIR) as scratch:
+        env = os.environ.copy()
+        env["TMPDIR"] = scratch
+        pip = [str(VENV_PYTHON), "-m", "pip", "--isolated", "install", "--no-cache-dir"]
+        print("Installing CPU-only PyTorch; CUDA/NVIDIA packages are not required.", flush=True)
+        subprocess.run(pip + ["--index-url", "https://download.pytorch.org/whl/cpu",
+                             CPU_TORCH], env=env, check=True)
+        subprocess.run(pip + ["--index-url", "https://pypi.org/simple", "--constraint",
+                             str(OFFLINE_CONSTRAINTS), ARGOS_REQUIREMENT], env=env, check=True)
+        subprocess.run([str(VENV_PYTHON), "-m", "pip", "check"], env=env, check=True)
+        subprocess.run([str(VENV_PYTHON), str(CPU_RUNTIME_CHECK)], env=env, check=True)
+    print("CPU-only offline runtime installed.", flush=True)
+
+def repair_offline():
+    """Explicitly rebuild only this application's private Python environment."""
+    if os.geteuid() == 0:
+        raise RuntimeError("Run repair-offline as your normal Ubuntu user")
+    expected = DATA_DIR.resolve() / "venv"
+    if VENV_DIR.is_symlink() or VENV_DIR.resolve() != expected:
+        raise RuntimeError("Refusing to remove an environment outside the app's private directory")
+    subprocess.run(["systemctl", "--user", "stop", "rime-llm-translator.service"], check=False)
+    if VENV_DIR.exists():
+        print("Removing failed app environment:", VENV_DIR, flush=True)
+        shutil.rmtree(VENV_DIR)
+    # Model packages, Rime data, config.ini and api_key are outside this folder.
+    install_offline_models()
+
+def install_offline_models():
+    """One-time internet installation. Translation itself remains offline."""
+    install_offline_runtime()
     subprocess.run([str(VENV_PYTHON), str(Path(__file__)), "download-models"],
                    check=True)
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
@@ -514,7 +559,8 @@ def doctor():
 def main():
     ap = argparse.ArgumentParser(description="Rime offline MT and hotkey-only AI")
     ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "serve-ai",
-                                        "doctor", "install-offline", "download-models", "restore-native"],
+                                        "doctor", "install-offline", "install-runtime", "repair-offline",
+                                        "download-models", "restore-native"],
                     help="Action")
     args = ap.parse_args()
     os.umask(0o077)
@@ -533,6 +579,10 @@ def main():
             serve("ai")
         elif args.command == "install-offline":
             install_offline_models()
+        elif args.command == "install-runtime":
+            install_offline_runtime()
+        elif args.command == "repair-offline":
+            repair_offline()
         elif args.command == "download-models":
             download_models()
         elif args.command == "restore-native":
@@ -541,6 +591,14 @@ def main():
             print("Redeploy original Rime and log out/in. API key and dictionaries retained.")
         else:
             doctor()
+    except subprocess.CalledProcessError as exc:
+        print("Installation step failed (exit %s). Check the error above and free disk space "
+              "if needed; rerun repair-offline after a partial installation." % exc.returncode,
+              file=sys.stderr)
+        return 1
+    except (KeyboardInterrupt, EOFError):
+        print("Cancelled.", file=sys.stderr)
+        return 130
     except (ValueError, RuntimeError, OSError) as exc:
         print("Error:", exc, file=sys.stderr)
         return 1

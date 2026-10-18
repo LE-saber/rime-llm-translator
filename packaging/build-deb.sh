@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.3.0~preview5}"
+VERSION="${VERSION:-0.3.0~preview6}"
 ARCH="$(dpkg --print-architecture)"
 PACKAGE="rime-llm-translator"
 ROOT="$(mktemp -d)"
@@ -21,6 +21,8 @@ install -m 0644 lua/rime_llm_translator.lua \
  "$ROOT/usr/share/rime-llm-translator/rime_llm_translator.lua"
 install -m 0644 lua/rime_llm_ai_hotkey.lua \
  "$ROOT/usr/share/rime-llm-translator/rime_llm_ai_hotkey.lua"
+install -m 0644 packaging/offline-constraints.txt packaging/check_cpu_runtime.py \
+ "$ROOT/usr/share/rime-llm-translator/"
 install -m 0644 packaging/rime-llm-translator.service \
  "$ROOT/usr/lib/systemd/user/rime-llm-translator.service"
 install -m 0644 packaging/rime-llm-ai.service \

@@ -1,6 +1,6 @@
 # Rime LLM Translator — offline MT + explicit AI correction
 
-Ubuntu 24.04, IBus, Luna Pinyin. Package: `0.3.0~preview5`.
+Ubuntu 24.04, IBus, Luna Pinyin. Package: `0.3.0~preview6`.
 
 Normal typing uses offline Argos Translate. Only **Ctrl+Shift+Enter** requests an OpenAI-compatible AI revision of the Chinese candidate and available MT drafts. Results are labeled `MT` or `AI`; completed AI results supersede MT and are reused.
 
@@ -9,14 +9,17 @@ Normal typing uses offline Argos Translate. Only **Ctrl+Shift+Enter** requests a
 Download the latest successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview5_amd64.deb
-# Run as the desktop user, without sudo:
-rime-llm-translator install-offline
-rime-llm-translator setup
-rime-llm-translator enable
+sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb && \
+  rime-llm-translator install-offline && \
+  rime-llm-translator setup && \
+  rime-llm-translator enable
 ```
 
 Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources and select it. Select Luna Pinyin with Ctrl+grave if necessary. An AI key is optional for offline-only usage.
+
+preview6 pins Argos 1.11.0 and official CPU-only torch 2.8.0, disables pip download caching, checks for at least 3 GiB free before installation and handles subprocess failures without a traceback. Except apt, run all commands as the desktop user.
+
+If preview5 filled the disk with CUDA dependencies, purge its pip download cache before upgrading, then run `rime-llm-translator repair-offline`. This explicitly removes and rebuilds only the app's private `venv`; keys, configuration, Rime dictionaries and language models are retained. See the Chinese recovery commands for details. The MT service defaults to CPU with two intra-op threads.
 
 The separate frontend refreshes late translation results through its own GLib/IBus main loop, without another physical key or OS key injection. The stock Rime engine is retained. Data is stored separately in `~/.config/ibus/rime-llm`; existing native user-frequency databases are not copied.
 

@@ -1,4 +1,4 @@
-# Ubuntu 24.04 手动验收（preview5）
+# Ubuntu 24.04 手动验收（preview6）
 
 目标：Ubuntu 24.04、IBus、朙月拼音。使用新增的 **Rime Translator** 输入源。
 原生 Rime 输入源不能主动刷新后台结果，不能用于验收自动刷新。
@@ -7,8 +7,8 @@
 
 1. 下载对应 GitHub Actions 的 artifact，解压 `.deb` 和 `SHA256SUMS`。
 2. 在 `.deb` 所在目录（artifact 的 `dist/`）运行 `sha256sum --check SHA256SUMS`。
-3. `sudo apt install ./rime-llm-translator_0.3.0~preview5_amd64.deb`。
-4. 使用桌面普通用户运行 `rime-llm-translator install-offline`（一次性联网下载依赖及三个模型）。
+3. `sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb`。
+4. 使用桌面普通用户运行 `rime-llm-translator install-offline`（一次性联网下载 CPU 专用依赖及三个模型）。必须看到安装成功后再继续。若 preview5 已空间耗尽，按 README_CN 的恢复步骤清理 pip 下载缓存并使用 `repair-offline`。
 5. `rime-llm-translator setup`：配置语言、可选 AI 地址及密钥；只用离线机翻时密钥留空。
 6. `rime-llm-translator enable`。
 7. 注销再登录，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator**。
@@ -22,6 +22,8 @@ preview1–4 升级用户可先运行 `rime-llm-translator restore-native`，重
 
 | 操作 | 预期 |
 |---|---|
+| 首次安装离线依赖 | 显示 CPU-only PyTorch；没有 NVIDIA/CUDA/Triton 包下载；空间不足时友好退出 |
+| preview5 失败后运行 repair-offline | 仅重建本项目 venv，API Key、设置和词库仍保留 |
 | 输入 `nihao` 后完全停止按键 | 中文候选立即出现；模型完成后自动出现 `🌐 MT · EN/JA`，无需补按键 |
 | 输入一个中文字，例如 `ni` | 同样可以离线翻译 |
 | 输入一段较长中文，包含多句话 | 能得到译文，输入本身不卡住；源文本上限 1200 UTF-8 字节 |

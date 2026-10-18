@@ -69,6 +69,13 @@ jobs:
           mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
+      - name: Install real CPU-only Argos runtime (no GPU dependencies)
+        timeout-minutes: 12
+        run: |
+          export HOME="$RUNNER_TEMP/cpu-runtime-home"
+          mkdir -p "$HOME"
+          rime-llm-translator install-runtime
+          "$HOME/.local/share/rime-llm-translator/venv/bin/python" /usr/share/rime-llm-translator/check_cpu_runtime.py
       - uses: actions/upload-artifact@v4
         with:
           name: rime-llm-translator-ubuntu24.04

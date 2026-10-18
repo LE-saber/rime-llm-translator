@@ -1,6 +1,6 @@
 # Rime LLM Translator — 离线机翻 + 按键 AI 修正
 
-目标环境：**Ubuntu 24.04、IBus、朙月拼音（含繁体）**。当前安装包为 `0.3.0~preview5`，通过 GitHub Actions 构建，供手动安装验收。
+目标环境：**Ubuntu 24.04、IBus、朙月拼音（含繁体）**。当前安装包为 `0.3.0~preview6`，通过 GitHub Actions 构建，供手动安装验收。
 
 普通输入使用 Argos Translate 离线翻译；只有 **Ctrl+Shift+Enter** 才请求 DeepSeek / OpenAI 兼容 API 修正。英日译文分别标记 `🌐 MT · EN/JA` 或 `✦ AI · EN/JA`，AI 缓存优先显示。单个中文字即可触发，默认防抖 450ms。
 
@@ -9,19 +9,31 @@
 从 [GitHub Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml) 下载最新成功构建的 artifact，解压后：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview5_amd64.deb
-
-# 以下命令以桌面普通用户运行，不加 sudo
-rime-llm-translator install-offline
-rime-llm-translator setup
-rime-llm-translator enable
+sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb && \
+  rime-llm-translator install-offline && \
+  rime-llm-translator setup && \
+  rime-llm-translator enable
 ```
 
-首次离线引擎安装需要联网下载 Python 依赖和简中→英、繁中→英、英→日三个模型，可能花费较长时间和存储空间。只用 MT 时，setup 的 API Key 可以留空。已配置 API 的用户用 `sync` 保留设置，然后 `enable`。
+除 apt 安装外，其余命令以桌面普通用户运行。首次离线引擎安装需要联网下载 Python 依赖和简中→英、繁中→英、英→日三个模型。preview6 固定 Argos 1.11.0 和 CPU 专用 PyTorch 2.8.0，不安装 CUDA/NVIDIA 依赖，关闭 pip 下载缓存，安装前要求用户目录所在文件系统至少有 3 GiB 可用空间。该门槛是安装检查，不是最终占用承诺。
+
+只用 MT 时，setup 的 API Key 可以留空。已配置 API 的用户用 `sync` 保留设置，然后 `enable`。
+
+### 修复 preview5 空间耗尽
+
+preview5 的依赖解析可能下载数 GB 的 GPU 包，报 `No space left on device`。若磁盘已满，先在旧环境仍存在时清理 pip 下载缓存（不卸载已安装的软件），再升级：
+
+```bash
+~/.local/share/rime-llm-translator/venv/bin/python -m pip cache purge
+sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb
+rime-llm-translator repair-offline
+```
+
+`repair-offline` 会停止后台、删除且重建本项目的 `~/.local/share/rime-llm-translator/venv`，保留 API Key、配置、Rime 词库和已安装语言模型。如果仍提示不足 3 GiB，需要继续释放虚拟机磁盘空间。安装失败会返回错误，不再输出未处理异常；成功后再运行 `setup` 或 `sync`，最后 `enable`。
 
 **注销再登录**，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator**，切换到该输入源。必要时用 Ctrl+反引号选择朙月拼音。
 
-preview5 新增独立 IBus 前端：在前端主循环检测当前文本的缓存变化，重新计算并发布候选表，停止输入后也能显示新译文。不向系统注入按键。原生 Rime 入口继续保留，仍可切回使用。新入口的用户数据在 `~/.config/ibus/rime-llm`，不会与原生 Rime 同时打开同一词频数据库，也不会复制旧词频。
+preview6 新增独立 IBus 前端：在前端主循环检测当前文本的缓存变化，重新计算并发布候选表，停止输入后也能显示新译文。不向系统注入按键。原生 Rime 入口继续保留，仍可切回使用。新入口的用户数据在 `~/.config/ibus/rime-llm`，不会与原生 Rime 同时打开同一词频数据库，也不会复制旧词频。
 
 preview1–4 用户如果启用过旧插件，可以运行 `rime-llm-translator restore-native`，再重新部署原生 Rime，撤销旧版本对 `~/.config/ibus/rime` 的插件补丁。此操作不删词典和 API Key。
 
@@ -49,7 +61,7 @@ max_tokens = 4096
 
 其他目标语言需另行安装 Argos 模型。默认中译日经过英语中转，质量需要人工判断。源文本上限 1200 UTF-8 字节（约 400 个纯中文字），不能用于无限长文档翻译。
 
-MT 和 AI 使用两个独立进程；AI 网络超时不会阻塞 MT。失败请求按 2–30 秒退避重试；已有的部分语言结果会保留。两类缓存各保留最近 350 项。模型未安装时，中文输入仍可使用。
+MT 和 AI 使用两个独立进程；AI 网络超时不会阻塞 MT。MT 服务默认使用 CPU，CTranslate2 单次推理最多使用 2 个线程、1 个翻译执行器。失败请求按 2–30 秒退避重试；已有的部分语言结果会保留。两类缓存各保留最近 350 项。模型未安装时，中文输入仍可使用。
 
 ## 停用与诊断
 
@@ -69,6 +81,6 @@ systemctl --user disable --now rime-llm-translator.service
 
 参见 [手动验收清单](docs/MANUAL_TEST.md)。真实模型推理、实际 API、GNOME/Wayland 最终绘制仍需手动安装验收。
 
-GitHub Actions 在 Ubuntu 24.04 执行 Python/Lua 测试、真实 librime 候选测试、原生 IBus 前端编译、deb 安装，以及“写入迟到的 MT/AI 缓存后，无额外按键仍发出候选更新”的 IBus 集成测试。artifact 包含 deb、SHA256SUMS 和验收文档。
+GitHub Actions 在 Ubuntu 24.04 执行 Python/Lua 测试、真实 librime 候选测试、原生 IBus 前端编译、deb 安装，以及“写入迟到的 MT/AI 缓存后，无额外按键仍发出候选更新”的 IBus 集成测试。另实际执行 CPU-only Argos 依赖安装、导入检查及 GPU 依赖排除检查。artifact 包含 deb、SHA256SUMS 和验收文档。
 
 原生前端基于 [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3)，按 GPLv3 或更新版本分发，完整修改源码及许可证见 [frontend](frontend/README.md)，安装包中也附带源码。根目录的 Ollama Lua 文件仅保留上游原型，当前安装包不使用 Ollama。
