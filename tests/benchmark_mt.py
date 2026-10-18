@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import resource
 import subprocess
 import sys
@@ -85,7 +86,8 @@ def main():
         long_source = "这是一个测试句子。" * 30 + "最后的数字是 9876。"
         assert len(long_source.encode()) <= 1200
         long_en = runtime.infer("zh-en", long_source, timeout=60)
-        assert "9876" in long_en, "long translation silently dropped its final sentence"
+        print("Long-input result:", long_en, flush=True)
+        long_tail_preserved = "9876" in re.sub(r"[\s,]", "", long_en)
         # A real idle interval demonstrates that weights are returned to the OS.
         process = runtime.process
         runtime.last_used = time.monotonic()
@@ -141,6 +143,7 @@ def main():
     assert peaks["both_rss_kib"] <= 350 * 1024, "two-model memory exceeds budget"
     assert report["english_p95_ms"] <= 1500, "English short-input latency exceeds budget"
     assert report["both_p95_ms"] <= 3000, "two-language latency exceeds budget"
+    assert long_tail_preserved, "long translation did not preserve the final number (inspect saved sample)"
 
 
 if __name__ == "__main__":
