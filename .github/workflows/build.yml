@@ -88,6 +88,7 @@ jobs:
           timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
       - name: Native CLI diagnostics with public examples
         env:
+          RIME_MT_DIAGNOSTICS: 1
           OPENBLAS_NUM_THREADS: 1
           OMP_NUM_THREADS: 1
         run: python3 tests/smoke_native.py

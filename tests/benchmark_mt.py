@@ -126,7 +126,7 @@ def main():
         f"- Warm English p95 (20 inputs): {report['english_p95_ms']:.0f} ms\n"
         f"- Warm English + Japanese p95: {report['both_p95_ms']:.0f} ms\n"
         f"- English process tree RSS high-water sum: {peaks['english_rss_kib']/1024:.1f} MiB\n"
-        f"- Both models process tree RSS high-water sum: {peaks['both_rss_kib']/1024:.1f} MiB\n"
+        f"- English/Japanese sequence RSS high-water sum (one direction resident): {peaks['both_rss_kib']/1024:.1f} MiB\n"
         f"- Native child sampled PSS peak: {peaks['child_pss_kib']/1024:.1f} MiB\n"
         f"- Native child maximum observed thread count: {peaks['threads']}\n"
         f"- After 60 seconds idle: child exited; parent RSS {report['idle_parent_rss_kib']/1024:.1f} MiB\n\n"

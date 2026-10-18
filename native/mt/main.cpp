@@ -1,6 +1,7 @@
 // Native CPU-only translation worker. Third-party code is pinned in engine.lock.
 #include <iostream>
 #include <cstring>
+#include <malloc.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -54,7 +55,7 @@ int main(int argc, char** argv) {
   using json = nlohmann::json;
   BlockingService::Config config;
   config.cacheSize = 0;
-  config.logger.level = "error";
+  config.logger.level = std::getenv("RIME_MT_DIAGNOSTICS") ? "info" : "error";
   BlockingService service(config);
   opencc::SimpleConverter converter("/usr/share/opencc/t2s.json");
   std::map<std::string, std::shared_ptr<TranslationModel>> models;
@@ -69,6 +70,12 @@ int main(int argc, char** argv) {
       if ((direction != "zh-en" && direction != "en-ja") || input.empty() || input.size() > 16384)
         throw std::runtime_error("invalid request");
       if (direction == "zh-en") input = converter.Convert(input);
+      // Keep one direction resident. Returning freed native arenas matters more
+      // than avoiding a reload when a VM alternates English and Japanese.
+      if (!models.count(direction)) {
+        models.clear();
+        malloc_trim(0);
+      }
       auto& model = models[direction];
       if (!model) {
         auto options = parseOptionsFromFilePath(std::string(argv[1]) + "/" + direction + "/config.yml");

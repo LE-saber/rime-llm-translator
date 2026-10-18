@@ -19,13 +19,13 @@ Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sou
 
 ## Behavior and resources
 
-- One native computation process and inference thread, at most one logical CPU by default. Models load on demand; 60 seconds idle exits the child and releases its memory.
+- One native computation process and inference thread, at most one logical CPU by default. Only one model direction is resident; changing direction releases the old model. 60 seconds idle exits the child and releases its memory.
 - One Chinese character triggers MT after a 450 ms debounce. Only the latest pending input is retained. English publishes before Japanese finishes.
 - OpenCC normalizes only the MT copy to simplified Chinese. Japanese pivots through English; AI keeps the original Chinese.
 - Separate MT/AI services, timeouts and caches. Each cache has at most 350 entries and 10 MiB; model revisions invalidate old results.
 - Input limit: 1200 UTF-8 bytes, with token-budget splitting. Offline targets: English and Japanese. Other languages can use explicit AI requests.
 - CPU must expose SSE4.1. Native builds do not use `-march=native`.
-- Model download resources total about 74.5 decimal MB. See the artifact's `RESOURCE_REPORT.md` for measured disk, latency and memory, and `mt-benchmark.json` for public sample translations. GitHub runner measurements are not VM performance guarantees.
+- Model resources total about 60.8 decimal MB. Chinese-English uses tiny (not yet marked Release in the upstream registry); English-Japanese uses base-memory. This is a preview requiring manual draft-quality acceptance. See `RESOURCE_REPORT.md` for measured disk, latency and memory, and `mt-benchmark.json` for public sample translations. GitHub runner measurements are not VM performance guarantees.
 
 ## Cleanup
 

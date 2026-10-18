@@ -11,7 +11,7 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "native/mt/models.lock.json"
 REGISTRY = "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json"
-SELECTED = {"zh-en": "cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w",
+SELECTED = {"zh-en": "cjk_icu_CQYVbMd3R5mtPx9PhXbNCA",
             "en-ja": "llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q"}
 
 def digest(path):
@@ -42,7 +42,7 @@ def main():
             name = asset["url"].rsplit("/", 1)[1]
             archive = directory / name
             output = directory / name.removesuffix(".gz")
-            if not archive.exists() or (not args.lock and digest(archive) != asset["sha256"]):
+            if args.lock or not archive.exists() or digest(archive) != asset["sha256"]:
                 with urlopen(asset["url"], timeout=120) as fp, archive.open("wb") as out:
                     shutil.copyfileobj(fp, out)
             archive_hash = digest(archive)

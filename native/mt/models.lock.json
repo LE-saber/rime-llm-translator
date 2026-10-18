@@ -3,28 +3,28 @@
   "generated": "2026-10-18T00:43:48Z",
   "models": {
     "zh-en": {
-      "name": "cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w",
-      "releaseStatus": "Release Android",
+      "name": "cjk_icu_CQYVbMd3R5mtPx9PhXbNCA",
+      "releaseStatus": null,
       "files": {
         "lexicalShortlist": {
-          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/lex.50.50.zhen.s2t.bin.gz",
-          "sha256": "216b4f87e61c89741114fa36b3cf01fb1e3a32cf0eb97bf1cb2f992951e8691b",
-          "compressedSize": 4822158,
-          "uncompressedHash": "8524dd4c93ffd7f0ae7be32f77a7c14fea7cdbbebe34ea6ad0ec368d5ddd8b13",
-          "uncompressedSize": 9219192,
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_icu_CQYVbMd3R5mtPx9PhXbNCA/exported/lex.50.50.zhen.s2t.bin.gz",
+          "sha256": "d8a4c7f194b6dc0f3bfef3a33e7acd1f86492161e3c6cba3305498bfda10296a",
+          "compressedSize": 4823906,
+          "uncompressedHash": "ebf756d0a38ba20659b1083d0980502ab57b58e0599e504240f7318356a49dd8",
+          "uncompressedSize": 9219524,
           "filename": "lex.50.50.zhen.s2t.bin"
         },
         "model": {
-          "uncompressedSize": 43977787,
-          "uncompressedHash": "5cd149601802fc8a18124a1c1306144dbbedc058630c4ddb2d53aa76fa9c7c06",
-          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/model.zhen.intgemm.alphas.bin.gz",
-          "sha256": "c430e24baad44b8e4f725458e2454aec8a760faefbd0a4592c80f114b051f692",
-          "compressedSize": 32726806,
+          "uncompressedSize": 25461051,
+          "uncompressedHash": "e4727e7927f905bffc51f173cb769beecf4c8dcaf082da3662bcd5a0e6417b8f",
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_icu_CQYVbMd3R5mtPx9PhXbNCA/exported/model.zhen.intgemm.alphas.bin.gz",
+          "sha256": "13167ade529e7ea164b03de889e9a14539d9c2b3d248efc3424dc389882bdbbf",
+          "compressedSize": 19041692,
           "filename": "model.zhen.intgemm.alphas.bin"
         },
         "vocab": {
-          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/vocab.zhen.spm.gz",
-          "sha256": "244ac04cd4e2126852fc6f697b2aa1e04acad4492c5ec8b37453974f33f88183",
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_icu_CQYVbMd3R5mtPx9PhXbNCA/exported/vocab.zhen.spm.gz",
+          "sha256": "8c4db37aa413ebfdec2b2dabb7652405f8b2a67e77030af2df3571b63eb4fe23",
           "compressedSize": 738862,
           "uncompressedHash": "dff594318ab7d8b7b60b844ab98ebe6b932ae8045fab15235404c787715965b3",
           "uncompressedSize": 1359697,
