@@ -1,0 +1,30 @@
+name: Validate lightweight native MT
+on:
+  push:
+    branches: ['feat/ubuntu-installable']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libopenblas-dev libopencc-dev nlohmann-json3-dev
+      - name: Build pinned CPU engine
+        run: bash packaging/build-mt.sh
+      - name: Fetch and verify pinned models
+        run: python3 packaging/fetch-mt-models.py
+      - name: Real model inference
+        env:
+          OPENBLAS_NUM_THREADS: 1
+          OMP_NUM_THREADS: 1
+        run: |
+          printf '%s\n' '{"direction":"zh-en","text":"你好，我明天上午十点到学校。"}' '{"direction":"en-ja","text":"Hello, I will go to school at ten tomorrow morning."}' | /usr/bin/time -v .build/mt/rime-mt .build/models
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-mt-validation
+          path: |
+            .build/mt/rime-mt
+            .build/mt/SOURCE_REVISIONS

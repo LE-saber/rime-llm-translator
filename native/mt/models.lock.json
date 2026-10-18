@@ -1,0 +1,74 @@
+{
+  "registry": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json",
+  "generated": "2026-10-18T00:43:48Z",
+  "models": {
+    "zh-en": {
+      "name": "cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w",
+      "releaseStatus": "Release Android",
+      "files": {
+        "lexicalShortlist": {
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/lex.50.50.zhen.s2t.bin.gz",
+          "sha256": "216b4f87e61c89741114fa36b3cf01fb1e3a32cf0eb97bf1cb2f992951e8691b",
+          "compressedSize": 4822158,
+          "uncompressedHash": "8524dd4c93ffd7f0ae7be32f77a7c14fea7cdbbebe34ea6ad0ec368d5ddd8b13",
+          "uncompressedSize": 9219192,
+          "filename": "lex.50.50.zhen.s2t.bin"
+        },
+        "model": {
+          "uncompressedSize": 43977787,
+          "uncompressedHash": "5cd149601802fc8a18124a1c1306144dbbedc058630c4ddb2d53aa76fa9c7c06",
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/model.zhen.intgemm.alphas.bin.gz",
+          "sha256": "c430e24baad44b8e4f725458e2454aec8a760faefbd0a4592c80f114b051f692",
+          "compressedSize": 32726806,
+          "filename": "model.zhen.intgemm.alphas.bin"
+        },
+        "vocab": {
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w/exported/vocab.zhen.spm.gz",
+          "sha256": "244ac04cd4e2126852fc6f697b2aa1e04acad4492c5ec8b37453974f33f88183",
+          "compressedSize": 738862,
+          "uncompressedHash": "dff594318ab7d8b7b60b844ab98ebe6b932ae8045fab15235404c787715965b3",
+          "uncompressedSize": 1359697,
+          "filename": "vocab.zhen.spm"
+        }
+      }
+    },
+    "en-ja": {
+      "name": "llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q",
+      "releaseStatus": "Release",
+      "files": {
+        "lexicalShortlist": {
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/en-ja/llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q/exported/lex.50.50.enja.s2t.bin.gz",
+          "sha256": "7966382f7a9ba15993c67721526921d8901caa0f8add56eff04e4bb327d57c11",
+          "compressedSize": 2341409,
+          "uncompressedHash": "edfb7eb47b98a2689b804ab3614c31b24f1257aa54b1154da3d85e1ae8152d9f",
+          "uncompressedSize": 4128360,
+          "filename": "lex.50.50.enja.s2t.bin"
+        },
+        "model": {
+          "uncompressedSize": 43849787,
+          "uncompressedHash": "59ae659f9bb63e4f81f474fe3c03d3f4499434b5f9e779fab7c12a45f31fd562",
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/en-ja/llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q/exported/model.enja.intgemm.alphas.bin.gz",
+          "sha256": "99fc8fc120189930beadacb2eef4b049d0794ac6132d1266340e457c95730368",
+          "compressedSize": 33052218,
+          "filename": "model.enja.intgemm.alphas.bin"
+        },
+        "srcVocab": {
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/en-ja/llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q/exported/srcvocab.enja.spm.gz",
+          "sha256": "12d8ffc83fc0bb61494d95701f6a298bbad5c999a043d4a48a1c1bd61e092167",
+          "compressedSize": 404352,
+          "uncompressedHash": "970c98d174fc01e0339fbabbf45af36a4be3f26f819ec1a5ea1189f71e091889",
+          "uncompressedSize": 796275,
+          "filename": "srcvocab.enja.spm"
+        },
+        "trgVocab": {
+          "url": "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/en-ja/llmaat_finetune10M_qe8_f2_ApiGGQIwTKuF9i_k3n9Q2Q/exported/trgvocab.enja.spm.gz",
+          "sha256": "be7fec234b5fc94616276ee6cca69f3a8cbfa6762fdf278dfc6b11eaf669cc48",
+          "compressedSize": 431278,
+          "uncompressedHash": "3b3d9f8f3a034d98d0a476f1794fa79c01e4e98a967ceb6777a66ba2d03ec1e1",
+          "uncompressedSize": 827144,
+          "filename": "trgvocab.enja.spm"
+        }
+      }
+    }
+  }
+}
