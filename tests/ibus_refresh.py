@@ -74,13 +74,17 @@ try:
         [table.get_candidate(i).get_text() for i in range(table.get_number_of_candidates())]
         if visible else []))
     context.connect("commit-text", lambda _, text: commits.append(text.get_text()))
+    context.connect("update-preedit-text", lambda _, text, *args:
+                    print("preedit:", text.get_text(), flush=True))
     context.connect("forward-key-event", lambda *args: forwarded.append(args[1:]))
     context.focus_in()
     context.set_engine("rime-llm")
     wait_for(lambda: context.get_engine() and context.get_engine().get_name() == "rime-llm",
              "packaged Rime Translator engine starts")
     for letter in "nihao":
-        context.process_key_event(ord(letter), 0, 0)
+        print("key:", letter, context.process_key_event(ord(letter), 0, 0), flush=True)
+    pump()
+    print("tables:", tables[-3:], "commits:", commits, "forwarded:", forwarded, flush=True)
     wait_for(lambda: tables and tables[-1] and tables[-1][0].startswith("你好"),
              "native Chinese candidate before any translations")
     assert not (cache / "ai.req").exists(), "normal typing requested AI"
@@ -111,6 +115,9 @@ try:
     assert len(commits) == before and not forwarded
     print("PASS: completed composition is not reopened by stale results", flush=True)
 finally:
+    for log in Path("/tmp").glob("rime.ibus.llm.*"):
+        if log.is_file() and log.suffix in (".INFO", ".WARNING", ".ERROR"):
+            print(log.name, log.read_text(errors="replace")[-10000:], flush=True)
     daemon.terminate()
     try:
         daemon.wait(timeout=5)

@@ -41,4 +41,4 @@ Description: Offline machine translation and optional AI candidates for IBus Rim
 EOF
 dpkg-deb --build --root-owner-group "$ROOT" "dist/${PACKAGE}_${VERSION}_${ARCH}.deb"
 dpkg-deb --info "dist/${PACKAGE}_${VERSION}_${ARCH}.deb"
-sha256sum "dist/${PACKAGE}_${VERSION}_${ARCH}.deb" > dist/SHA256SUMS
+(cd dist && sha256sum "${PACKAGE}_${VERSION}_${ARCH}.deb") > dist/SHA256SUMS

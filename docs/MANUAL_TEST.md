@@ -6,7 +6,7 @@
 ## 安装
 
 1. 下载对应 GitHub Actions 的 artifact，解压 `.deb` 和 `SHA256SUMS`。
-2. 在解压目录运行 `sha256sum --check SHA256SUMS`。若文件路径含 `dist/`，在其上一级目录运行。
+2. 在 `.deb` 所在目录（artifact 的 `dist/`）运行 `sha256sum --check SHA256SUMS`。
 3. `sudo apt install ./rime-llm-translator_0.3.0~preview5_amd64.deb`。
 4. 使用桌面普通用户运行 `rime-llm-translator install-offline`（一次性联网下载依赖及三个模型）。
 5. `rime-llm-translator setup`：配置语言、可选 AI 地址及密钥；只用离线机翻时密钥留空。

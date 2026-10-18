@@ -75,6 +75,7 @@ void ibus_rime_start(gboolean full_check) {
   if (rime_api->start_maintenance((Bool)full_check)) {
     // update frontend config
     rime_api->deploy_config_file("ibus_rime.yaml", "config_version");
+    rime_api->join_maintenance_thread();
   }
 }
 

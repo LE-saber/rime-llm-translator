@@ -54,7 +54,7 @@ jobs:
           dpkg-deb -c dist/*.deb
           test "$(dpkg-deb -f dist/*.deb Architecture)" = amd64
           test "$(dpkg-deb -f dist/*.deb Package)" = rime-llm-translator
-          sha256sum --check dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
       - name: Smoke-test installable package
         run: |
           sudo apt-get install -y ./dist/*.deb
