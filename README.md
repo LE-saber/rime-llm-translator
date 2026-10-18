@@ -1,40 +1,43 @@
-# Rime LLM Translator — offline MT + explicit AI correction
+# Rime LLM Translator — lightweight offline MT + explicit AI
 
-Ubuntu 24.04, IBus, Luna Pinyin. Package: `0.3.0~preview6`.
+Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview7` replaces Argos/PyTorch with native CPU-only Bergamot and bundled Mozilla INT8 models. No pip, compilation or first-run model download on the user's machine.
 
-Normal typing uses offline Argos Translate. Only **Ctrl+Shift+Enter** requests an OpenAI-compatible AI revision of the Chinese candidate and available MT drafts. Results are labeled `MT` or `AI`; completed AI results supersede MT and are reused.
+Normal typing produces offline English/Japanese drafts. **Ctrl+Shift+Enter** explicitly sends the original Chinese and available drafts to the configured DeepSeek / OpenAI-compatible API for revision. An API key is optional. MT never uploads input or automatically falls back to cloud AI.
 
 ## Install
 
-Download the latest successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
+Download a successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb && \
-  rime-llm-translator install-offline && \
-  rime-llm-translator setup && \
-  rime-llm-translator enable
+sudo apt install ./rime-llm-translator_0.3.0~preview7_amd64.deb
+rime-llm-translator setup && rime-llm-translator enable
 ```
 
-Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources and select it. Select Luna Pinyin with Ctrl+grave if necessary. An AI key is optional for offline-only usage.
+Existing users run `sync && enable` instead of `setup` to retain provider settings and keys. `install-offline` now verifies bundled resources. Except apt, run commands as the desktop user.
 
-preview6 pins Argos 1.11.0 and official CPU-only torch 2.8.0, disables pip download caching, checks for at least 3 GiB free before installation and handles subprocess failures without a traceback. Except apt, run all commands as the desktop user.
+Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources. Stock Rime remains available. The new engine uses `~/.config/ibus/rime-llm` and refreshes late results through IBus without another key or OS key injection.
 
-If preview5 filled the disk with CUDA dependencies, purge its pip download cache before upgrading, then run `rime-llm-translator repair-offline`. This explicitly removes and rebuilds only the app's private `venv`; keys, configuration, Rime dictionaries and language models are retained. See the Chinese recovery commands for details. The MT service defaults to CPU with two intra-op threads.
+## Behavior and resources
 
-The separate frontend refreshes late translation results through its own GLib/IBus main loop, without another physical key or OS key injection. The stock Rime engine is retained. Data is stored separately in `~/.config/ibus/rime-llm`; existing native user-frequency databases are not copied.
+- One native computation process and inference thread, at most one logical CPU by default. Models load on demand; 60 seconds idle exits the child and releases its memory.
+- One Chinese character triggers MT after a 450 ms debounce. Only the latest pending input is retained. English publishes before Japanese finishes.
+- OpenCC normalizes only the MT copy to simplified Chinese. Japanese pivots through English; AI keeps the original Chinese.
+- Separate MT/AI services, timeouts and caches. Each cache has at most 350 entries and 10 MiB; model revisions invalidate old results.
+- Input limit: 1200 UTF-8 bytes, with token-budget splitting. Offline targets: English and Japanese. Other languages can use explicit AI requests.
+- CPU must expose SSE4.1. Native builds do not use `-march=native`.
+- Model download resources total about 74.5 decimal MB. See the artifact's `RESOURCE_REPORT.md` for measured disk, latency and memory, and `mt-benchmark.json` for public sample translations. GitHub runner measurements are not VM performance guarantees.
 
-For preview1–4 upgrades, `rime-llm-translator restore-native` removes only old translator patches from the original Rime directory; redeploy that original input source afterwards. Existing provider settings and API keys are retained by `sync`.
+## Cleanup
 
-## Behavior and limits
+```bash
+rime-llm-translator cleanup-legacy          # preview only
+rime-llm-translator cleanup-legacy --apply  # delete private old venv/temp files
+```
 
-- MT begins with one Chinese character, with a 450ms debounce.
-- Install zh→en, zt→en and en→ja models once online; subsequent MT is offline. Chinese→Japanese pivots through English.
-- MT and AI run in separate services. Failed jobs retry with a 2–30 second backoff. Partial language results are retained. Each result cache holds at most 350 entries.
-- Configure `source_language = auto`, `zh`, or `zt` in `~/.config/rime-llm-translator/config.ini`. Traditional Chinese users should prefer `zt`.
-- The source limit is 1200 UTF-8 bytes. Other target languages need extra Argos model packages.
-- `disable` stops new translations. Switch back to native Rime at any time.
-- AI hotkeys transmit the selected source and available MT drafts to the configured provider. Ordinary MT does not upload text.
+Keys, configuration and Rime dictionaries remain. Shared pip cache and old Argos models require explicit `--pip-cache` / `--argos-models` selection; symlink redirects are refused. See [upgrade and cleanup](docs/UPGRADE_CLEANUP.md) for disk-full recovery and shared-data implications.
 
-CI validates Python/Lua logic, real librime, the built package and real IBus lookup-table signals for late cached MT/AI results. Real downloaded models, API quality/latency and final GNOME/Wayland rendering require manual installation testing. See [中文说明](README_CN.md) and [manual acceptance checklist](docs/MANUAL_TEST.md).
+Use `doctor` for diagnosis, `disable` to stop new translations, and switch to stock Rime at any time. For preview1–4, `restore-native` removes translator patches from the original Rime schema; redeploy afterwards.
 
-The bundled frontend derives from GPLv3-or-later [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3); its full modified source and license are included in `frontend/` and the deb package. The original Ollama prototype remains as a reference and is not installed.
+See [中文说明](README_CN.md), [manual acceptance](docs/MANUAL_TEST.md) and [plan](docs/LIGHTWEIGHT_MT_PLAN.md). Builds/tests use GitHub Actions without WSL. Cloud quality and GNOME/Wayland behavior require user acceptance.
+
+The frontend derives from GPLv3-or-later ibus-rime 1.5.0, with modified sources and license included in `frontend/` and the package. The Mozilla inference sources, dependency licenses and pinned submodules are included as `/usr/share/doc/rime-llm-translator/inference-source.tar.xz`; wrapper sources and revisions accompany it. Mozilla models are MPL 2.0; hashes are in `native/mt/models.lock.json`. The root Ollama prototype is retained as an unused upstream reference.

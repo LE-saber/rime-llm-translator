@@ -17,7 +17,8 @@ end
 local function id_for(text,langs,o)
   local s=text.."|"..langs.."|"..
     (o["provider.model"] or "").."|"..(o["provider.base_url"] or "").."|"..
-    (o["translation.source_language"] or "auto")
+    (o["translation.source_language"] or "auto").."|"..
+    (o["translation.offline_revision"] or "bergamot-v1")
   local a,b=5381,0
   for i=1,#s do
     local n=s:byte(i)

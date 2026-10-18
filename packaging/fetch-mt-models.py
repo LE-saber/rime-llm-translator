@@ -66,7 +66,7 @@ def main():
                   "vocabs: [" + vocab + ", " + trg + "]\n"
                   "shortlist: [" + files["lexicalShortlist"]["filename"] + ", false]\n"
                   "beam-size: 1\nnormalize: 1.0\nword-penalty: 0\n"
-                  "max-length-break: 64\nmini-batch-words: 64\nmaxi-batch: 1\n"
+                  "max-length-break: 64\nmini-batch-words: 192\nmaxi-batch: 1\n"
                   "workspace: 32\ncpu-threads: 1\nssplit-mode: sentence\n"
                   "gemm-precision: int8shiftAll\nskip-cost: true\nquiet: true\nquiet-translation: true\n")
         (directory / "config.yml").write_text(config)

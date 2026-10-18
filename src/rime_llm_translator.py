@@ -10,10 +10,14 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from urllib import request, error
 from urllib.parse import urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parent) if
+                (Path(__file__).resolve().parent / "rime_mt.py").is_file() else
+                "/usr/share/rime-llm-translator")
+import rime_mt
 
 APP = "rime-llm-translator"
 CONFIG_DIR = Path.home() / ".config" / APP
@@ -26,12 +30,6 @@ AI_RESULTS = CACHE_DIR / "results-ai"
 AI_REQUEST = CACHE_DIR / "ai.req"
 DATA_DIR = Path.home() / ".local/share" / APP
 VENV_DIR = DATA_DIR / "venv"
-VENV_PYTHON = VENV_DIR / "bin/python"
-OFFLINE_CONSTRAINTS = Path("/usr/share/rime-llm-translator/offline-constraints.txt")
-CPU_RUNTIME_CHECK = Path("/usr/share/rime-llm-translator/check_cpu_runtime.py")
-CPU_TORCH = "torch==2.8.0+cpu"
-ARGOS_REQUIREMENT = "argostranslate==1.11.0"
-OFFLINE_MIN_FREE = 3 * 1024 ** 3
 HOTKEY_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_ai_hotkey.lua")
 PROCESSOR_KEY = "engine/processors/@before 0"
 PROCESSOR_VALUE = "lua_processor@*rime_llm_ai_hotkey"
@@ -53,13 +51,16 @@ def config_default():
     cfg["translation"] = {"enabled": "true", "languages": DEFAULT_LANGUAGES,
                           "min_characters": "1", "debounce_ms": "450",
                           "offline_enabled": "true", "source_language": "auto",
-                          "timeout_seconds": "10", "max_tokens": "4096"}
+                          "timeout_seconds": "10", "max_tokens": "4096",
+                          "offline_timeout_seconds": "15", "offline_idle_seconds": "60",
+                          "offline_revision": rime_mt.revision()}
     return cfg
 
 def load_config():
     cfg = config_default()
     if CONFIG_PATH.exists():
         cfg.read(CONFIG_PATH, encoding="utf-8")
+    cfg["translation"]["offline_revision"] = rime_mt.revision()
     return cfg
 
 def save_config(cfg):
@@ -202,98 +203,19 @@ def trim_cache(keep=350):
     for folder in (MT_RESULTS, AI_RESULTS):
         entries = sorted(folder.glob("*.res"),
                          key=lambda x: x.stat().st_mtime, reverse=True)
-        for path in entries[keep:]:
-            path.unlink(missing_ok=True)
+        used = 0
+        for index, path in enumerate(entries):
+            used += path.stat().st_size
+            if index >= keep or used > 10 * 1024 * 1024:
+                path.unlink(missing_ok=True)
 
-def local_translate(text, cfg):
-    """Offline Argos packages are loaded by the persistent user worker."""
-    from argostranslate import translate as argos
-    src = cfg.get("translation", "source_language", fallback="auto")
-    if src == "auto":
-        # Chinese traditional and simplified share many glyphs; users can
-        # override auto explicitly to zh or zt for optimal accuracy.
-        traditional = "體臺萬與為學門時後說會來國龍這嗎個們電車開"
-        src = "zt" if any(ch in text for ch in traditional) else "zh"
-    if src not in ("zh", "zt"):
-        raise ValueError("Source language must be auto, zh or zt")
-    codes = parse_languages(cfg["translation"]["languages"])
-    result = {}
-    for code in codes:
-        try:
-            value = argos.translate(text, src, code)
-            if value and value.strip():
-                result[code] = value.strip().replace("\r", " ").replace("\n", " ")
-        except Exception as exc:
-            print(APP + ": offline " + code + ": " + type(exc).__name__,
-                  file=sys.stderr, flush=True)
-    if not result:
-        raise RuntimeError("No offline Argos language models available")
-    return result
+local_translate = rime_mt.local_translate
 
-def install_offline_runtime():
-    """Pin CPU wheels before resolving Argos' transitive torch dependency."""
-    if os.geteuid() == 0:
-        raise RuntimeError("Run install-offline as your normal Ubuntu user")
-    if not OFFLINE_CONSTRAINTS.is_file() or not CPU_RUNTIME_CHECK.is_file():
-        raise RuntimeError("CPU runtime installation files are missing; reinstall the .deb")
-    private_dir(DATA_DIR)
-    available = shutil.disk_usage(DATA_DIR).free
-    if available < OFFLINE_MIN_FREE:
-        raise RuntimeError("Offline installation needs at least 3 GiB free on your home filesystem "
-                           "(currently %.1f GiB). Clear old pip downloads or run repair-offline "
-                           "to remove this app's failed environment." % (available / 1024 ** 3))
-    if not VENV_PYTHON.is_file():
-        subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True)
-    # Keep temporary downloads on the checked filesystem and do not duplicate
-    # hundreds of MB into the user's shared pip cache.
-    with tempfile.TemporaryDirectory(prefix="install-", dir=DATA_DIR) as scratch:
-        env = os.environ.copy()
-        env["TMPDIR"] = scratch
-        pip = [str(VENV_PYTHON), "-m", "pip", "--isolated", "install", "--no-cache-dir"]
-        print("Installing CPU-only PyTorch; CUDA/NVIDIA packages are not required.", flush=True)
-        subprocess.run(pip + ["--index-url", "https://download.pytorch.org/whl/cpu",
-                             CPU_TORCH], env=env, check=True)
-        subprocess.run(pip + ["--index-url", "https://pypi.org/simple", "--constraint",
-                             str(OFFLINE_CONSTRAINTS), ARGOS_REQUIREMENT], env=env, check=True)
-        subprocess.run([str(VENV_PYTHON), "-m", "pip", "check"], env=env, check=True)
-        subprocess.run([str(VENV_PYTHON), str(CPU_RUNTIME_CHECK)], env=env, check=True)
-    print("CPU-only offline runtime installed.", flush=True)
-
-def repair_offline():
-    """Explicitly rebuild only this application's private Python environment."""
-    if os.geteuid() == 0:
-        raise RuntimeError("Run repair-offline as your normal Ubuntu user")
-    expected = DATA_DIR.resolve() / "venv"
-    if VENV_DIR.is_symlink() or VENV_DIR.resolve() != expected:
-        raise RuntimeError("Refusing to remove an environment outside the app's private directory")
-    subprocess.run(["systemctl", "--user", "stop", "rime-llm-translator.service"], check=False)
-    if VENV_DIR.exists():
-        print("Removing failed app environment:", VENV_DIR, flush=True)
-        shutil.rmtree(VENV_DIR)
-    # Model packages, Rime data, config.ini and api_key are outside this folder.
-    install_offline_models()
 
 def install_offline_models():
-    """One-time internet installation. Translation itself remains offline."""
-    install_offline_runtime()
-    subprocess.run([str(VENV_PYTHON), str(Path(__file__)), "download-models"],
-                   check=True)
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "restart",
-                    "rime-llm-translator.service"], check=False)
-    print("Offline Argos models installed. Disconnect network to test.")
+    rime_mt.check_offline()
+    print("Bundled native MT engine and models verified. No pip or downloads required.")
 
-def download_models():
-    from argostranslate import package
-    package.update_package_index()
-    candidates = package.get_available_packages()
-    for src, dst in (("zh", "en"), ("zt", "en"), ("en", "ja")):
-        found = next((p for p in candidates if p.from_code == src and
-                      p.to_code == dst), None)
-        if found is None:
-            raise RuntimeError("Missing Argos model: %s -> %s" % (src, dst))
-        print("Installing offline language model:", src, "->", dst, flush=True)
-        package.install_from_path(found.download())
 
 class Worker:
     """One independent queue per process; slow AI never blocks offline MT."""
@@ -343,7 +265,13 @@ class Worker:
                 drafts = read_results(MT_RESULTS / (identifier + ".res"))
                 translated = translate(source, cfg, key, drafts=drafts)
             else:
-                translated = local_translate(source, cfg)
+                def publish(partial):
+                    cached.update(partial)
+                    atomically_write(output, encode_results(cached))
+                def current():
+                    return self.request.read_text(encoding="utf-8").splitlines()[0] == identifier
+                translated = local_translate(source, cfg, publish=publish,
+                                             current=current, existing=cached)
             cached.update(translated)
             atomically_write(output, encode_results(cached))
             trim_cache()
@@ -362,8 +290,6 @@ class Worker:
             return False
 
 def serve(mode="mt"):
-    if mode == "mt" and VENV_PYTHON.is_file() and Path(sys.executable) != VENV_PYTHON:
-        os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), str(Path(__file__)), "serve"])
     import fcntl
     os.umask(0o077)
     for path in (CACHE_DIR, MT_RESULTS, AI_RESULTS):
@@ -378,9 +304,14 @@ def serve(mode="mt"):
         try:
             while True:
                 worker.poll()
+                if mode == "mt":
+                    idle = max(5, min(load_config().getfloat("translation", "offline_idle_seconds"), 300))
+                    rime_mt.NATIVE.reap_idle(idle)
                 time.sleep(.15)
         except KeyboardInterrupt:
             return
+        finally:
+            rime_mt.NATIVE.close()
 
 def _load_user_patch(rime_dir=None):
     import yaml
@@ -497,6 +428,7 @@ def install_user_files():
 def sync():
     """Noninteractive update: retain provider configuration and API key."""
     install_user_files()
+    save_config(load_config())
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     subprocess.run(["systemctl", "--user", "restart",
                     "rime-llm-translator.service"], check=False)
@@ -540,7 +472,13 @@ def doctor():
     print("API key:", "configured" if KEY_PATH.is_file() else "missing")
     print("Lua plugin:", (RIME_DIR / "lua/rime_llm_translator.lua").is_file())
     print("AI shortcut Lua:", (RIME_DIR / "lua/rime_llm_ai_hotkey.lua").is_file())
-    print("Argos offline venv:", VENV_PYTHON.is_file())
+    print("Offline backend: Bergamot native INT8; revision:", rime_mt.revision())
+    print("Legacy Argos venv remains:", VENV_DIR.exists())
+    try:
+        rime_mt.check_offline()
+        print("Bundled models: checksums verified")
+    except (RuntimeError, OSError, ValueError) as exc:
+        print("Bundled models: unavailable:", exc)
     print("Rime Translator data:", RIME_DIR)
     print("IBus frontend:", Path("/usr/libexec/rime-llm-translator/ibus-engine-rime-llm").is_file())
     try:
@@ -560,9 +498,14 @@ def main():
     ap = argparse.ArgumentParser(description="Rime offline MT and hotkey-only AI")
     ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "serve-ai",
                                         "doctor", "install-offline", "install-runtime", "repair-offline",
-                                        "download-models", "restore-native"],
+                                        "download-models", "restore-native", "cleanup-legacy"],
                     help="Action")
+    ap.add_argument("--apply", action="store_true", help="Delete the paths shown by cleanup-legacy")
+    ap.add_argument("--pip-cache", action="store_true", help="Include shared ~/.cache/pip downloads")
+    ap.add_argument("--argos-models", action="store_true", help="Include shared old Chinese/English/Japanese Argos models")
     args = ap.parse_args()
+    if args.command != "cleanup-legacy" and (args.apply or args.pip_cache or args.argos_models):
+        ap.error("Cleanup flags require cleanup-legacy")
     os.umask(0o077)
     try:
         if args.command == "setup":
@@ -577,14 +520,11 @@ def main():
             serve()
         elif args.command == "serve-ai":
             serve("ai")
-        elif args.command == "install-offline":
+        elif args.command in ("install-offline", "install-runtime", "download-models", "repair-offline"):
             install_offline_models()
-        elif args.command == "install-runtime":
-            install_offline_runtime()
-        elif args.command == "repair-offline":
-            repair_offline()
-        elif args.command == "download-models":
-            download_models()
+            print("For old installation remnants, run cleanup-legacy to preview cleanup.")
+        elif args.command == "cleanup-legacy":
+            rime_mt.cleanup_legacy(args.apply, args.pip_cache, args.argos_models)
         elif args.command == "restore-native":
             remove_schema_patch(Path.home() / ".config/ibus/rime")
             print("Removed only preview1-4 translator patches from original Rime.")
@@ -592,8 +532,8 @@ def main():
         else:
             doctor()
     except subprocess.CalledProcessError as exc:
-        print("Installation step failed (exit %s). Check the error above and free disk space "
-              "if needed; rerun repair-offline after a partial installation." % exc.returncode,
+        print("System command failed (exit %s). Check the error above; verify your user service "
+              "session and package installation." % exc.returncode,
               file=sys.stderr)
         return 1
     except (KeyboardInterrupt, EOFError):

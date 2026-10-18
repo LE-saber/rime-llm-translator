@@ -28,83 +28,6 @@ class Response:
 
 class TranslatorTests(unittest.TestCase):
     @contextmanager
-    def install_environment(self):
-        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
-            root = Path(directory)
-            data = root / "data"
-            venv = data / "venv"
-            (venv / "bin").mkdir(parents=True)
-            (venv / "bin/python").touch()
-            paths = {"DATA_DIR": data, "VENV_DIR": venv, "VENV_PYTHON": venv / "bin/python",
-                     "OFFLINE_CONSTRAINTS": MODULE.parent.parent / "packaging/offline-constraints.txt",
-                     "CPU_RUNTIME_CHECK": MODULE.parent.parent / "packaging/check_cpu_runtime.py"}
-            for name, path in paths.items():
-                stack.enter_context(patch.object(tr, name, path))
-            stack.enter_context(patch.object(tr.os, "geteuid", return_value=1000))
-            stack.enter_context(patch.object(tr.shutil, "disk_usage", return_value=Mock(free=10 * 1024 ** 3)))
-            yield root
-
-    def test_cpu_wheel_is_installed_before_constrained_argos_without_cache(self):
-        with self.install_environment(), patch.object(tr.subprocess, "run") as run:
-            tr.install_offline_runtime()
-            commands = [call.args[0] for call in run.call_args_list]
-            self.assertIn(tr.CPU_TORCH, commands[0])
-            self.assertIn("https://download.pytorch.org/whl/cpu", commands[0])
-            self.assertIn(tr.ARGOS_REQUIREMENT, commands[1])
-            self.assertIn("--constraint", commands[1])
-            for call in run.call_args_list[:2]:
-                self.assertIn("--no-cache-dir", call.args[0])
-                self.assertTrue(Path(call.kwargs["env"]["TMPDIR"]).parent == tr.DATA_DIR)
-            self.assertEqual(commands[-1], [str(tr.VENV_PYTHON), str(tr.CPU_RUNTIME_CHECK)])
-
-    def test_low_disk_stops_before_downloading_dependencies(self):
-        with self.install_environment(), patch.object(tr.shutil, "disk_usage", return_value=Mock(free=1)), \
-                patch.object(tr.subprocess, "run") as run:
-            with self.assertRaisesRegex(RuntimeError, "3 GiB"):
-                tr.install_offline_runtime()
-            run.assert_not_called()
-
-    def test_pip_failure_does_not_continue_to_argos(self):
-        with self.install_environment(), patch.object(tr.subprocess, "run",
-                side_effect=subprocess.CalledProcessError(1, ["pip"])) as run:
-            with self.assertRaises(subprocess.CalledProcessError):
-                tr.install_offline_runtime()
-            self.assertEqual(run.call_count, 1)
-
-    def test_cli_handles_dependency_failure_without_traceback(self):
-        with patch.object(sys, "argv", ["translator", "install-offline"]), \
-                patch.object(tr, "install_offline_models", side_effect=subprocess.CalledProcessError(1, ["pip"])), \
-                patch.object(sys, "stderr", new_callable=io.StringIO) as output:
-            self.assertEqual(tr.main(), 1)
-            self.assertIn("Installation step failed", output.getvalue())
-            self.assertNotIn("Traceback", output.getvalue())
-
-    def test_repair_removes_only_app_venv(self):
-        with self.install_environment() as root, patch.object(tr.subprocess, "run"), \
-                patch.object(tr, "install_offline_models") as install:
-            settings = root / "api_key"
-            settings.write_text("keep-test-key")
-            model = tr.DATA_DIR / "model"
-            model.write_text("keep-model")
-            tr.repair_offline()
-            self.assertFalse(tr.VENV_DIR.exists())
-            self.assertEqual(settings.read_text(), "keep-test-key")
-            self.assertTrue(model.is_file())
-            install.assert_called_once()
-
-    def test_repair_rejects_symlink_venv(self):
-        with self.install_environment() as root, patch.object(tr.subprocess, "run") as run:
-            shutil.rmtree(tr.VENV_DIR)
-            protected = root / "protected"
-            protected.mkdir()
-            (protected / "keep").touch()
-            tr.VENV_DIR.symlink_to(protected, target_is_directory=True)
-            with self.assertRaisesRegex(RuntimeError, "Refusing"):
-                tr.repair_offline()
-            self.assertTrue((protected / "keep").is_file())
-            run.assert_not_called()
-
-    @contextmanager
     def worker_environment(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory)
@@ -181,13 +104,6 @@ class TranslatorTests(unittest.TestCase):
             for folder in (tr.MT_RESULTS, tr.AI_RESULTS):
                 self.assertEqual({p.name for p in folder.iterdir()}, {"3.res", "4.res"})
 
-    def test_one_missing_offline_model_does_not_hide_other_language(self):
-        cfg = tr.config_default()
-        mock_translate = Mock()
-        mock_translate.translate.side_effect = ["Hello", RuntimeError("missing Japanese model")]
-        with patch.dict(sys.modules, {"argostranslate": Mock(translate=mock_translate)}):
-            self.assertEqual(tr.local_translate("你好", cfg), {"en": "Hello"})
-
     def test_default_languages(self):
         self.assertEqual(list(tr.parse_languages(tr.DEFAULT_LANGUAGES)),
                          ["en", "ja"])
@@ -242,17 +158,6 @@ class TranslatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tr.decode_request("../bad\n0a\n")
         self.assertIn("e38193", tr.encode_results({"ja": "こ"}))
-
-    def test_offline_argos_short_text_and_traditional(self):
-        cfg = tr.config_default()
-        mock_translate = Mock()
-        mock_translate.translate.side_effect = (
-            lambda text, src, dst: f"{src}:{dst}:{text}")
-        with patch.dict(sys.modules, {"argostranslate": Mock(translate=mock_translate)}):
-            self.assertEqual(tr.local_translate("你", cfg)["en"], "zh:en:你")
-            self.assertEqual(tr.local_translate("學", cfg)["ja"], "zt:ja:學")
-            cfg["translation"]["source_language"] = "zt"
-            self.assertEqual(tr.local_translate("好", cfg)["en"], "zt:en:好")
 
     def test_bad_answer(self):
         for content in ("not json", "[]", '{"x":"missing"}'):

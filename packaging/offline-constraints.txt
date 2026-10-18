@@ -1,3 +1,0 @@
-# Keep Argos' transitive torch requirement on the preinstalled official CPU wheel.
-torch==2.8.0+cpu
-argostranslate==1.11.0

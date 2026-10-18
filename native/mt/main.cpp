@@ -1,5 +1,6 @@
 // Native CPU-only translation worker. Third-party code is pinned in engine.lock.
 #include <iostream>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <string>
@@ -15,10 +16,12 @@ int main(int argc, char** argv) {
     std::cerr << "rime-mt: CPU requires SSE4.1\n";
     return 2;
   }
+  if (std::strcmp(argv[1], "--check-cpu") == 0) return 0;
   using namespace marian::bergamot;
   using json = nlohmann::json;
   BlockingService::Config config;
   config.cacheSize = 0;
+  config.logger.level = "error";
   BlockingService service(config);
   opencc::SimpleConverter converter("/usr/share/opencc/t2s.json");
   std::map<std::string, std::shared_ptr<TranslationModel>> models;

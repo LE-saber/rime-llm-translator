@@ -1,45 +1,63 @@
-# Rime LLM Translator — 离线机翻 + 按键 AI 修正
+# Rime LLM Translator — 轻量离线机翻 + 按键 AI 修正
 
-目标环境：**Ubuntu 24.04、IBus、朙月拼音（含繁体）**。当前安装包为 `0.3.0~preview6`，通过 GitHub Actions 构建，供手动安装验收。
+目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview7` 使用原生 Bergamot INT8，替换 Argos/PyTorch。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
 
-普通输入使用 Argos Translate 离线翻译；只有 **Ctrl+Shift+Enter** 才请求 DeepSeek / OpenAI 兼容 API 修正。英日译文分别标记 `🌐 MT · EN/JA` 或 `✦ AI · EN/JA`，AI 缓存优先显示。单个中文字即可触发，默认防抖 450ms。
+普通输入提供 `🌐 MT · EN/JA` 草稿；仅 **Ctrl+Shift+Enter** 请求配置的 DeepSeek / OpenAI 兼容 API 修正。AI 读取中文原文和已有草稿，结果标为 `✦ AI · EN/JA` 并优先显示。API Key 可留空。
 
-## 安装
+## 安装与升级
 
-从 [GitHub Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml) 下载最新成功构建的 artifact，解压后：
-
-```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb && \
-  rime-llm-translator install-offline && \
-  rime-llm-translator setup && \
-  rime-llm-translator enable
-```
-
-除 apt 安装外，其余命令以桌面普通用户运行。首次离线引擎安装需要联网下载 Python 依赖和简中→英、繁中→英、英→日三个模型。preview6 固定 Argos 1.11.0 和 CPU 专用 PyTorch 2.8.0，不安装 CUDA/NVIDIA 依赖，关闭 pip 下载缓存，安装前要求用户目录所在文件系统至少有 3 GiB 可用空间。该门槛是安装检查，不是最终占用承诺。
-
-只用 MT 时，setup 的 API Key 可以留空。已配置 API 的用户用 `sync` 保留设置，然后 `enable`。
-
-### 修复 preview5 空间耗尽
-
-preview5 的依赖解析可能下载数 GB 的 GPU 包，报 `No space left on device`。若磁盘已满，先在旧环境仍存在时清理 pip 下载缓存（不卸载已安装的软件），再升级：
+下载最新成功的 [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，解压后：
 
 ```bash
-~/.local/share/rime-llm-translator/venv/bin/python -m pip cache purge
-sudo apt install ./rime-llm-translator_0.3.0~preview6_amd64.deb
-rime-llm-translator repair-offline
+sudo apt install ./rime-llm-translator_0.3.0~preview7_amd64.deb
 ```
 
-`repair-offline` 会停止后台、删除且重建本项目的 `~/.local/share/rime-llm-translator/venv`，保留 API Key、配置、Rime 词库和已安装语言模型。如果仍提示不足 3 GiB，需要继续释放虚拟机磁盘空间。安装失败会返回错误，不再输出未处理异常；成功后再运行 `setup` 或 `sync`，最后 `enable`。
+新用户运行：
 
-**注销再登录**，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator**，切换到该输入源。必要时用 Ctrl+反引号选择朙月拼音。
+```bash
+rime-llm-translator setup && rime-llm-translator enable
+```
 
-preview6 新增独立 IBus 前端：在前端主循环检测当前文本的缓存变化，重新计算并发布候选表，停止输入后也能显示新译文。不向系统注入按键。原生 Rime 入口继续保留，仍可切回使用。新入口的用户数据在 `~/.config/ibus/rime-llm`，不会与原生 Rime 同时打开同一词频数据库，也不会复制旧词频。
+已有版本运行，保留 API Key 和设置：
 
-preview1–4 用户如果启用过旧插件，可以运行 `rime-llm-translator restore-native`，再重新部署原生 Rime，撤销旧版本对 `~/.config/ibus/rime` 的插件补丁。此操作不删词典和 API Key。
+```bash
+rime-llm-translator sync && rime-llm-translator enable
+rime-llm-translator install-offline
+```
+
+`install-offline` 现在只校验包内资源。旧 `install-runtime`、`download-models`、`repair-offline` 命令也兼容为校验入口；清理使用单独命令。
+
+除 APT 外，命令均以桌面普通用户运行。**注销再登录**，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator** 并切换过去，必要时 Ctrl+反引号选择朙月拼音。
+
+独立前端通过 GLib/IBus 主循环更新迟到的翻译候选，不需额外按键，不向系统注入按键。原生 Rime 入口保留；新入口数据在 `~/.config/ibus/rime-llm`，不会复制或同时打开原生词频数据库。
+
+## 旧版本残留
+
+完整方案见 [升级与清理](docs/UPGRADE_CLEANUP.md)。先查看，再执行：
+
+```bash
+rime-llm-translator cleanup-legacy
+rime-llm-translator cleanup-legacy --apply
+```
+
+默认仅清理本项目私有 venv 和未完成安装的临时目录，保留密钥、配置和 Rime 词库。共享 pip 缓存及 Argos 模型需要额外参数。检测到符号链接跳转会拒绝删除。旧环境保留期间，其磁盘仍需另计。
+
+## 工作方式与性能
+
+- 原生 C++ 子进程单线程、单请求推理，默认最多一个逻辑核、较低 CPU 优先级；计算时该核仍可能显示 100% CPU。
+- 一个中文字即可触发，默认防抖 450 ms。只保留最新待处理输入，跳过旧输入尚未开始的日文计算。
+- OpenCC 仅将机翻副本归一化为简体，共用中英模型。日文复用英文结果中转，定位为基本草稿；云端 AI 保留中文原文。
+- 英文完成即刷新候选，日文随后补齐。只配置英文时不加载英日模型。
+- 登录不预加载权重；默认空闲 60 秒退出计算进程，回收内存。下一次请求需要冷启动。
+- MT 和 AI 独立服务。MT 不上传文本，失败不自动请求 AI；AI 超时不阻塞 MT。日志不记录正文、草稿或密钥。
+- 源文本上限 1200 UTF-8 字节；引擎按 token 预算分块，不支持无限长文档。离线仅提供英、日，其他目标语言可用显式 AI 请求。
+- MT/AI 缓存各最多 350 项、10 MiB。缓存身份包含模型/引擎修订、归一化修订与源语言，不复用旧 Argos 结果。
+
+两套模型压缩资源约 74.5 MB（十进制）。安装包、解压磁盘、真实模型冷/热延迟和内存见每次构建 artifact 的 `RESOURCE_REPORT.md`，公开样本译文见 `mt-benchmark.json`。GitHub runner 实测不能代替虚拟机验收。原生引擎要求虚拟机 CPU 暴露 SSE4.1，构建不使用 Actions 主机专属 `-march=native`。
 
 ## 配置
 
-配置文件：`~/.config/rime-llm-translator/config.ini`。
+文件：`~/.config/rime-llm-translator/config.ini`。
 
 ```ini
 [provider]
@@ -53,34 +71,28 @@ languages = en:English,ja:Japanese
 source_language = auto
 min_characters = 1
 debounce_ms = 450
+offline_timeout_seconds = 15
+offline_idle_seconds = 60
 timeout_seconds = 10
 max_tokens = 4096
 ```
 
-繁体朙月拼音用户建议设置 `source_language = zt`；简体可用 `zh`。`auto` 是简单字形启发式，不能识别所有共用字。更改源语言会使用不同缓存。
+`source_language` 接受 `auto`、`zh`、`zt`，均对机翻副本进行简繁归一化，不再依赖字形启发式选择模型。`offline_revision` 由 `sync`/`enable` 自动写入。只用英文可设 `languages = en:English`；低功耗模式可将防抖改为 600–800 ms。
 
-其他目标语言需另行安装 Argos 模型。默认中译日经过英语中转，质量需要人工判断。源文本上限 1200 UTF-8 字节（约 400 个纯中文字），不能用于无限长文档翻译。
-
-MT 和 AI 使用两个独立进程；AI 网络超时不会阻塞 MT。MT 服务默认使用 CPU，CTranslate2 单次推理最多使用 2 个线程、1 个翻译执行器。失败请求按 2–30 秒退避重试；已有的部分语言结果会保留。两类缓存各保留最近 350 项。模型未安装时，中文输入仍可使用。
-
-## 停用与诊断
+## 诊断与停用
 
 ```bash
 rime-llm-translator doctor
 systemctl --user status rime-llm-translator.service rime-llm-ai.service
 journalctl --user -u rime-llm-translator.service -u rime-llm-ai.service -n 60 --no-pager
-
-# 停止翻译；随时可以切回原生 Rime
 rime-llm-translator disable
 systemctl --user disable --now rime-llm-translator.service
 ```
 
-普通 MT 不上传输入文本。显式 AI 快捷键会发送当前中文候选及已有机翻草稿到配置的模型。密钥单独保存在用户目录，后台错误日志不输出输入正文、草稿或密钥。
+可随时切回原生 Rime。preview1–4 启用过旧插件的用户，可执行 `rime-llm-translator restore-native` 后重新部署原生 Rime，移除旧翻译器补丁，保留词典和密钥。
 
-## 验收和构建
+## 验收与来源
 
-参见 [手动验收清单](docs/MANUAL_TEST.md)。真实模型推理、实际 API、GNOME/Wayland 最终绘制仍需手动安装验收。
+GitHub Actions 在 Ubuntu 24.04 检查 Python/Lua、真实 librime 候选、包安装、真实 IBus 迟到候选刷新及断网真实模型推理，并生成资源报告。GNOME/Wayland 绘制、虚拟机体验及草稿质量由用户按 [手动清单](docs/MANUAL_TEST.md) 验收；不使用 WSL。
 
-GitHub Actions 在 Ubuntu 24.04 执行 Python/Lua 测试、真实 librime 候选测试、原生 IBus 前端编译、deb 安装，以及“写入迟到的 MT/AI 缓存后，无额外按键仍发出候选更新”的 IBus 集成测试。另实际执行 CPU-only Argos 依赖安装、导入检查及 GPU 依赖排除检查。artifact 包含 deb、SHA256SUMS 和验收文档。
-
-原生前端基于 [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3)，按 GPLv3 或更新版本分发，完整修改源码及许可证见 [frontend](frontend/README.md)，安装包中也附带源码。根目录的 Ollama Lua 文件仅保留上游原型，当前安装包不使用 Ollama。
+前端基于 GPLv3-or-later [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3)，源码与许可在 `frontend/` 及包内。原生 Mozilla 引擎和模型锁定信息在 `native/mt/`；推理依赖完整源码及许可证随包置于 `/usr/share/doc/rime-llm-translator/inference-source.tar.xz`，并附本项目包装代码。Mozilla 模型按 MPL 2.0 分发，第三方依赖保留各自许可。根目录 Ollama Lua 是未参与安装运行的上游原型。

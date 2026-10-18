@@ -17,10 +17,18 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-ibus-1.0 g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth
+          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-ibus-1.0 g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev
+      - uses: actions/cache@v4
+        id: mt-cache
+        with:
+          path: |
+            .build/mozilla
+            .build/mt
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'packaging/build-mt.sh') }}
+          restore-keys: mt-ubuntu24-
       - name: Syntax check
         run: |
-          python3 -m py_compile src/rime_llm_translator.py
+          python3 -m py_compile src/rime_llm_translator.py src/rime_mt.py packaging/fetch-mt-models.py tests/benchmark_mt.py
           luac5.4 -p lua/rime_llm_translator.lua
           luac5.4 -p lua/rime_llm_ai_hotkey.lua
           lua5.4 tests/test_lua_filter.lua
@@ -48,7 +56,15 @@ jobs:
           grep -Fn 'lua_filter@*rime_llm_translator' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
           grep -Fn 'lua_processor@*rime_llm_ai_hotkey' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
       - name: Build .deb
+        id: build
         run: bash packaging/build-deb.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.build.outcome == 'success' && steps.mt-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .build/mozilla
+            .build/mt
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'packaging/build-mt.sh') }}
       - name: Inspect installer
         run: |
           dpkg-deb -c dist/*.deb
@@ -69,14 +85,14 @@ jobs:
           mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
-      - name: Install real CPU-only Argos runtime (no GPU dependencies)
-        timeout-minutes: 12
+      - name: Real offline models and resource report (network disabled)
+        timeout-minutes: 8
         run: |
-          export HOME="$RUNNER_TEMP/cpu-runtime-home"
-          mkdir -p "$HOME"
-          rime-llm-translator install-runtime
-          "$HOME/.local/share/rime-llm-translator/venv/bin/python" /usr/share/rime-llm-translator/check_cpu_runtime.py
+          rime-llm-translator install-offline
+          CORE="$(awk '/Cpus_allowed_list/ {split($2,a,/[,-]/); print a[1]}' /proc/self/status)"
+          sudo -E unshare --net taskset -c "$CORE" /usr/bin/python3 tests/benchmark_mt.py
       - uses: actions/upload-artifact@v4
+        if: always() && steps.build.outcome == 'success'
         with:
           name: rime-llm-translator-ubuntu24.04
           path: |
@@ -84,6 +100,9 @@ jobs:
             dist/SHA256SUMS
             README_CN.md
             docs/MANUAL_TEST.md
+            docs/UPGRADE_CLEANUP.md
+            dist/RESOURCE_REPORT.md
+            dist/mt-benchmark.json
           if-no-files-found: error
           retention-days: 30
       - name: Publish tagged release

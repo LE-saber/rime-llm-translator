@@ -33,7 +33,8 @@ local function identifier(text, langs, opts)
   local data = text .. "|" .. langs .. "|" ..
       (opts["provider.model"] or "") .. "|" ..
       (opts["provider.base_url"] or "") .. "|" ..
-      (opts["translation.source_language"] or "auto")
+      (opts["translation.source_language"] or "auto") .. "|" ..
+      (opts["translation.offline_revision"] or "bergamot-v1")
   local a,b = 5381,0
   for i=1,#data do
     local n = data:byte(i)
