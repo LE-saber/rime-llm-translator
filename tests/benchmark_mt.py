@@ -55,7 +55,7 @@ def main():
             if process:
                 child = memory(process.pid)
                 key = stage[0] + "_rss_kib"
-                peaks[key] = max(peaks[key], child.get("VmRSS", 0) + parent.get("VmRSS", 0))
+                peaks[key] = max(peaks[key], child.get("VmHWM", 0) + parent.get("VmHWM", 0))
                 peaks["child_pss_kib"] = max(peaks["child_pss_kib"], child.get("Pss", 0))
                 peaks["threads"] = max(peaks["threads"], child.get("Threads", 0))
     monitor = threading.Thread(target=sample)
@@ -123,12 +123,13 @@ def main():
         f"- Cold English: {cold_ms:.0f} ms\n"
         f"- Warm English p95 (20 inputs): {report['english_p95_ms']:.0f} ms\n"
         f"- Warm English + Japanese p95: {report['both_p95_ms']:.0f} ms\n"
-        f"- English process tree sampled RSS peak: {peaks['english_rss_kib']/1024:.1f} MiB\n"
-        f"- Both models process tree sampled RSS peak: {peaks['both_rss_kib']/1024:.1f} MiB\n"
+        f"- English process tree RSS high-water sum: {peaks['english_rss_kib']/1024:.1f} MiB\n"
+        f"- Both models process tree RSS high-water sum: {peaks['both_rss_kib']/1024:.1f} MiB\n"
         f"- Native child sampled PSS peak: {peaks['child_pss_kib']/1024:.1f} MiB\n"
         f"- Native child maximum observed thread count: {peaks['threads']}\n"
         f"- After 60 seconds idle: child exited; parent RSS {report['idle_parent_rss_kib']/1024:.1f} MiB\n\n"
-        "RSS is sampled every 10 ms and summed across parent and child; shared pages can be counted twice. "
+        "The OS RSS high-water marks are read every 10 ms and summed across parent and child; "
+        "the individual peaks may not be simultaneous and shared pages can be counted twice. "
         "The benchmark parent includes measurement code, not the separate AI worker or IBus/Rime. "
         "Source and translated public samples are in mt-benchmark.json. "
         "System dependency sizes and apt transaction logs are separate from project files.\n")

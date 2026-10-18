@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -148,3 +149,9 @@ class CleanupTests(unittest.TestCase):
                 mt.cleanup_legacy(apply=True)
             self.assertTrue(venv.exists())
             run.assert_not_called()
+
+    def test_cleanup_preserves_a_stopped_service(self):
+        with self.home(), patch.object(mt, "check_offline"), \
+                patch.object(mt.subprocess, "run", return_value=subprocess.CompletedProcess([], 3)) as run:
+            mt.cleanup_legacy(apply=True)
+            self.assertFalse(any("start" in call.args[0] for call in run.call_args_list))

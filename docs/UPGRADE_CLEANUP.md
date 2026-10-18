@@ -39,7 +39,7 @@ rime-llm-translator cleanup-legacy
 rime-llm-translator cleanup-legacy --apply
 ```
 
-默认仅选择 `~/.local/share/rime-llm-translator/venv` 及同一项目目录中的 `install-*` 临时文件。删除前校验新包资源、停止 MT 服务，检查所有目标及父目录没有符号链接跳转，完成后启动服务。显示的是逻辑大小，实际释放空间受文件系统及硬链接影响。
+默认仅选择 `~/.local/share/rime-llm-translator/venv` 及同一项目目录中的 `install-*` 临时文件。删除前校验新包资源、停止 MT 服务，检查所有目标及父目录没有符号链接跳转；原来运行的 MT 服务在完成后恢复，原来停用的保持停用。显示的是逻辑大小，实际释放空间受文件系统及硬链接影响。
 
 ## 可选：共享缓存和旧语言模型
 

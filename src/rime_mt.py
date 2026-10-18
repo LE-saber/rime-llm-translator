@@ -192,7 +192,12 @@ def cleanup_legacy(apply=False, include_pip=False, include_argos=False):
         print("Preview only. Add --apply to delete these selected paths.")
         print("Shared pip cache / Argos models excluded unless --pip-cache / --argos-models is supplied.")
         return
+    if not checked:
+        print("No selected remnants to remove.")
+        return
     check_offline()
+    was_active = subprocess.run(["systemctl", "--user", "is-active", "--quiet",
+                                 "rime-llm-translator.service"], check=False).returncode == 0
     subprocess.run(["systemctl", "--user", "stop", "rime-llm-translator.service"], check=True)
     try:
         for path, _ in checked:
@@ -202,5 +207,6 @@ def cleanup_legacy(apply=False, include_pip=False, include_argos=False):
             else:
                 path.unlink()
     finally:
-        subprocess.run(["systemctl", "--user", "start", "rime-llm-translator.service"], check=False)
+        if was_active:
+            subprocess.run(["systemctl", "--user", "start", "rime-llm-translator.service"], check=False)
     print("Legacy files removed. Configuration, API key and Rime dictionaries retained.")

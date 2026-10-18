@@ -9,6 +9,7 @@ permissions:
   contents: read
 jobs:
   test-and-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -85,6 +86,11 @@ jobs:
           mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
           timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
+      - name: Native CLI diagnostics with public examples
+        env:
+          OPENBLAS_NUM_THREADS: 1
+          OMP_NUM_THREADS: 1
+        run: python3 tests/smoke_native.py
       - name: Real offline models and resource report (network disabled)
         timeout-minutes: 8
         run: |

@@ -2,7 +2,8 @@
 """Real packaged IBus frontend: late MT/AI results must update without input.
 
 Run only in a disposable HOME under dbus-run-session + xvfb-run.
-No models, network calls or credentials are used.
+Synthetic cache checks are followed by the real packaged MT worker.
+No cloud calls or credentials are used.
 """
 import os
 from pathlib import Path
@@ -37,6 +38,7 @@ os.environ["IBUS_ADDRESS"] = "unix:path=" + str(home / "ibus.sock")
 daemon = subprocess.Popen(["ibus-daemon", "--replace", "--panel=disable",
                            "--config=disable", "--address=" + os.environ["IBUS_ADDRESS"]])
 loop = GLib.MainContext.default()
+worker = None
 
 def wait_for(predicate, label, seconds=20):
     deadline = time.monotonic() + seconds
@@ -114,7 +116,32 @@ try:
     pump()
     assert len(commits) == before and not forwarded
     print("PASS: completed composition is not reopened by stale results", flush=True)
+    # Full path: real Chinese composition -> Lua request -> native model worker
+    # -> partial cache -> IBus table, with no extra key after typing.
+    for letter in "ni":
+        context.process_key_event(ord(letter), 0, 0)
+    wait_for(lambda: tables and tables[-1] and tables[-1][0].startswith("你"),
+             "single-character native candidate before model execution")
+    worker = subprocess.Popen(["/usr/bin/rime-llm-translator", "serve"], start_new_session=True)
+    wait_for(lambda: tables and any("MT" in c and "EN" in c for c in tables[-1]),
+             "real model English reaches IBus without another key", seconds=30)
+    wait_for(lambda: tables and any("MT" in c and "JA" in c for c in tables[-1]),
+             "real model Japanese reaches IBus without another key", seconds=30)
+    assert len(commits) == before and not forwarded
+    # Ordinary MT must not generate another AI request.
+    assert (cache / "ai.req").read_text().splitlines()[0] == rid
+    context.reset()
 finally:
+    if worker:
+        import signal
+        try:
+            os.killpg(worker.pid, signal.SIGTERM)
+            worker.wait(timeout=5)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            os.killpg(worker.pid, signal.SIGKILL)
+            worker.wait()
     for log in Path("/tmp").glob("rime.ibus.llm.*"):
         if log.is_file() and log.suffix in (".INFO", ".WARNING", ".ERROR"):
             print(log.name, log.read_text(errors="replace")[-10000:], flush=True)

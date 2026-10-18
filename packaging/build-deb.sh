@@ -28,7 +28,8 @@ for DIRECTION in zh-en en-ja; do
   find ".build/models/$DIRECTION" -maxdepth 1 -type f ! -name '*.gz' \
     -exec install -m 0644 '{}' "$ROOT/usr/share/rime-llm-translator/models/$DIRECTION/" \;
 done
-sha256sum native/mt/models.lock.json native/mt/engine.lock native/mt/main.cpp packaging/fetch-mt-models.py \
+sha256sum .build/mt/rime-mt native/mt/models.lock.json native/mt/engine.lock native/mt/main.cpp \
+  native/mt/CMakeLists.txt packaging/build-mt.sh packaging/fetch-mt-models.py \
   | sha256sum | cut -d ' ' -f 1 > "$ROOT/usr/share/rime-llm-translator/mt-revision"
 # Complete corresponding third-party inference sources, including dependency
 # license texts, pinned commits and the unmodified Mozilla license.

@@ -75,6 +75,14 @@ class TranslatorTests(unittest.TestCase):
             self.assertEqual(translate.call_args.args[1]["translation"]["languages"], "ja:Japanese")
             self.assertEqual(len(tr.read_results(tr.MT_RESULTS / "12345678abcdef90.res")), 2)
 
+    def test_published_english_survives_later_native_failure(self):
+        def partial_failure(text, cfg, publish, **kwargs):
+            publish({"en": "Hello"})
+            raise RuntimeError("Japanese engine failed")
+        with self.worker_environment(), patch.object(tr, "local_translate", side_effect=partial_failure):
+            self.assertFalse(tr.Worker("mt").poll())
+            self.assertEqual(tr.read_results(tr.MT_RESULTS / "12345678abcdef90.res"), {"en": "Hello"})
+
     def test_mt_worker_never_reads_key_or_calls_ai(self):
         with self.worker_environment(), patch.object(tr, "translate", side_effect=AssertionError("AI called")) as ai, \
                 patch.object(tr, "local_translate", return_value={"en": "Hello", "ja": "Hi"}):
