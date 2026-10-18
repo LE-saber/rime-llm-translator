@@ -1,7 +1,6 @@
 [Unit]
-Description=Rime LLM Translator background worker
-After=network-online.target
-Wants=network-online.target
+Description=Rime offline translation worker
+Wants=rime-llm-ai.service
 
 [Service]
 Type=simple

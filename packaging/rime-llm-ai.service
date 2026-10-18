@@ -1,0 +1,13 @@
+[Unit]
+Description=Rime explicit AI revision worker
+PartOf=rime-llm-translator.service
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rime-llm-translator serve-ai
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes

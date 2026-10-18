@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import os
+from contextlib import ExitStack, contextmanager
 from unittest.mock import patch, Mock
 
 MODULE = Path(__file__).resolve().parents[1] / "src/rime_llm_translator.py"
@@ -23,6 +25,90 @@ class Response:
         return self.data[:maximum]
 
 class TranslatorTests(unittest.TestCase):
+    @contextmanager
+    def worker_environment(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            paths = {"CACHE_DIR": root, "MT_RESULTS": root / "mt", "AI_RESULTS": root / "ai",
+                     "LATEST_PATH": root / "latest.req", "AI_REQUEST": root / "ai.req",
+                     "KEY_PATH": root / "api_key"}
+            for name, path in paths.items():
+                stack.enter_context(patch.object(tr, name, path))
+            tr.MT_RESULTS.mkdir()
+            tr.AI_RESULTS.mkdir()
+            cfg = tr.config_default()
+            stack.enter_context(patch.object(tr, "load_config", side_effect=lambda: self.copy_config(cfg)))
+            tr.LATEST_PATH.write_text("12345678abcdef90\n" + "你好".encode().hex() + "\n")
+            os.utime(tr.LATEST_PATH, (0, 0))
+            yield cfg
+
+    @staticmethod
+    def copy_config(cfg):
+        copy = tr.config_default()
+        copy.read_dict({section: dict(cfg[section]) for section in cfg.sections()})
+        return copy
+
+    def test_mt_retries_unchanged_request_after_transient_failure(self):
+        with self.worker_environment(), patch.object(tr.time, "monotonic", return_value=10), \
+                patch.object(tr, "local_translate", side_effect=[RuntimeError("transient"),
+                         {"en": "Hello", "ja": "こんにちは"}]) as translate:
+            worker = tr.Worker("mt")
+            self.assertFalse(worker.poll())
+            self.assertFalse(worker.poll())
+            self.assertEqual(translate.call_count, 1)
+            worker.retry_at = 0
+            self.assertTrue(worker.poll())
+            self.assertEqual(translate.call_count, 2)
+            self.assertEqual(tr.read_results(tr.MT_RESULTS / "12345678abcdef90.res")["en"], "Hello")
+            worker.poll()
+            self.assertEqual(translate.call_count, 2)
+
+    def test_partial_mt_cache_is_preserved_and_only_missing_language_retried(self):
+        with self.worker_environment(), patch.object(tr, "local_translate",
+                side_effect=[{"en": "Hello"}, {"ja": "こんにちは"}]) as translate:
+            worker = tr.Worker("mt")
+            self.assertFalse(worker.poll())
+            worker.retry_at = 0
+            self.assertTrue(worker.poll())
+            self.assertEqual(translate.call_args.args[1]["translation"]["languages"], "ja:Japanese")
+            self.assertEqual(len(tr.read_results(tr.MT_RESULTS / "12345678abcdef90.res")), 2)
+
+    def test_mt_worker_never_reads_key_or_calls_ai(self):
+        with self.worker_environment(), patch.object(tr, "translate", side_effect=AssertionError("AI called")) as ai, \
+                patch.object(tr, "local_translate", return_value={"en": "Hello", "ja": "Hi"}):
+            self.assertTrue(tr.Worker("mt").poll())
+            ai.assert_not_called()
+            self.assertFalse(tr.AI_REQUEST.exists())
+
+    def test_ai_receives_mt_drafts_and_reuses_completed_cache(self):
+        with self.worker_environment(), patch.object(tr, "translate",
+                return_value={"en": "Hello", "ja": "こんにちは"}) as ai:
+            tr.AI_REQUEST.write_bytes(tr.LATEST_PATH.read_bytes())
+            tr.KEY_PATH.write_text("fake-test-key")
+            (tr.MT_RESULTS / "12345678abcdef90.res").write_text(tr.encode_results({"en": "Helo"}))
+            self.assertTrue(tr.Worker("ai").poll())
+            self.assertEqual(ai.call_args.kwargs["drafts"], {"en": "Helo"})
+            self.assertFalse(tr.Worker("ai").poll())
+            self.assertEqual(ai.call_count, 1)
+
+    def test_cache_cleanup_bounds_both_active_directories(self):
+        with self.worker_environment():
+            for folder in (tr.MT_RESULTS, tr.AI_RESULTS):
+                for index in range(5):
+                    path = folder / (str(index) + ".res")
+                    path.write_text("cached")
+                    os.utime(path, (index + 1, index + 1))
+            tr.trim_cache(keep=2)
+            for folder in (tr.MT_RESULTS, tr.AI_RESULTS):
+                self.assertEqual({p.name for p in folder.iterdir()}, {"3.res", "4.res"})
+
+    def test_one_missing_offline_model_does_not_hide_other_language(self):
+        cfg = tr.config_default()
+        mock_translate = Mock()
+        mock_translate.translate.side_effect = ["Hello", RuntimeError("missing Japanese model")]
+        with patch.dict(sys.modules, {"argostranslate": Mock(translate=mock_translate)}):
+            self.assertEqual(tr.local_translate("你好", cfg), {"en": "Hello"})
+
     def test_default_languages(self):
         self.assertEqual(list(tr.parse_languages(tr.DEFAULT_LANGUAGES)),
                          ["en", "ja"])

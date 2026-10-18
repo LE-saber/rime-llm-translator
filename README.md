@@ -1,41 +1,37 @@
 # Rime LLM Translator — offline MT + explicit AI correction
 
-Ubuntu 24.04, IBus Rime, Luna Pinyin. **Normal typing never calls the AI API.**
+Ubuntu 24.04, IBus, Luna Pinyin. Package: `0.3.0~preview5`.
 
-- **Offline machine translation** via [Argos Translate](https://github.com/argosopentech/argos-translate). Install the zh→en, zt→en and en→ja models once while online, then translate without network access.
-- Native Chinese candidates are always shown first. Offline results are marked `🌐 MT · EN` / `🌐 MT · JA`.
-- Press **Ctrl+Shift+Enter** while selecting a Chinese Rime candidate to queue a single OpenAI-compatible AI correction. Cached AI results supersede the corresponding MT output and are marked `✦ AI · EN` / `✦ AI · JA`.
-- Automatic offline MT begins with one Chinese character; only the latest input after a configurable short debounce is processed.
-- Important limit: the background worker does not directly notify a stationary Rime GUI candidate menu; a subsequent Rime composition refresh/key event may be needed to show new translations. No synchronous translation is run inside Rime.
+Normal typing uses offline Argos Translate. Only **Ctrl+Shift+Enter** requests an OpenAI-compatible AI revision of the Chinese candidate and available MT drafts. Results are labeled `MT` or `AI`; completed AI results supersede MT and are reused.
 
-## Ubuntu installation
+## Install
 
-Download the `preview4` .deb from [Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml):
+Download the latest successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.2.0~preview4_all.deb
-
-# One-time Internet use to install Argos in a private Python venv + download models
+sudo apt install ./rime-llm-translator_0.3.0~preview5_amd64.deb
+# Run as the desktop user, without sudo:
 rime-llm-translator install-offline
-
-# Configure provider, target languages, API key (first time only)
 rime-llm-translator setup
-
-# Existing users should use sync instead of setup to retain settings
-rime-llm-translator sync
-
-# Explicitly opt in: setup and sync never patch a working Rime input method
 rime-llm-translator enable
 ```
 
-Redeploy Luna Pinyin and log out/in. If the native Chinese candidates disappear, use `rime-llm-translator disable` and redeploy Rime. This preserves dictionaries and provider secrets.
+Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources and select it. Select Luna Pinyin with Ctrl+grave if necessary. An AI key is optional for offline-only usage.
 
-Configure source language with `source_language = auto`, `zh`, or `zt` under `[translation]` in `~/.config/rime-llm-translator/config.ini`. Set `zt` if you primarily use Traditional Chinese. Configured targets default to `en:English,ja:Japanese`; other targets require Argos language packs installed separately.
+The separate frontend refreshes late translation results through its own GLib/IBus main loop, without another physical key or OS key injection. The stock Rime engine is retained. Data is stored separately in `~/.config/ibus/rime-llm`; existing native user-frequency databases are not copied.
 
-## Safety, testing and limitations
+For preview1–4 upgrades, `rime-llm-translator restore-native` removes only old translator patches from the original Rime directory; redeploy that original input source afterwards. Existing provider settings and API keys are retained by `sync`.
 
-CI uses real Ubuntu 24.04 librime + librime-plugin-lua to verify Chinese candidates remain intact, MT/AI cache selection, and the manual shortcut dispatch. Python tests cover mock Argos translation and patch rollback. Actual downloaded Argos packages, live API calls, GUI/Wayland candidate repaint and CPU throughput remain desktop validation tasks; this is a preview.
+## Behavior and limits
 
-Do not enable AI on sensitive input: hotkey requests send the selected source text to the configured remote provider. Normal MT never sends text to any server.
+- MT begins with one Chinese character, with a 450ms debounce.
+- Install zh→en, zt→en and en→ja models once online; subsequent MT is offline. Chinese→Japanese pivots through English.
+- MT and AI run in separate services. Failed jobs retry with a 2–30 second backoff. Partial language results are retained. Each result cache holds at most 350 entries.
+- Configure `source_language = auto`, `zh`, or `zt` in `~/.config/rime-llm-translator/config.ini`. Traditional Chinese users should prefer `zt`.
+- The source limit is 1200 UTF-8 bytes. Other target languages need extra Argos model packages.
+- `disable` stops new translations. Switch back to native Rime at any time.
+- AI hotkeys transmit the selected source and available MT drafts to the configured provider. Ordinary MT does not upload text.
 
-See [中文说明](README_CN.md).
+CI validates Python/Lua logic, real librime, the built package and real IBus lookup-table signals for late cached MT/AI results. Real downloaded models, API quality/latency and final GNOME/Wayland rendering require manual installation testing. See [中文说明](README_CN.md) and [manual acceptance checklist](docs/MANUAL_TEST.md).
+
+The bundled frontend derives from GPLv3-or-later [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3); its full modified source and license are included in `frontend/` and the deb package. The original Ollama prototype remains as a reference and is not installed.

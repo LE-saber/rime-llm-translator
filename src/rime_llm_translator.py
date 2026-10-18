@@ -1,9 +1,5 @@
 #!/usr/bin/python3
-"""User-scoped OpenAI-compatible translation worker and Ubuntu installer.
-
-No non-standard Python runtime modules. Optional PyYAML from python3-yaml is used
-only for non-destructive Rime schema patching during setup.
-"""
+"""Offline translation, explicit AI revision and Ubuntu per-user setup."""
 import argparse
 import configparser
 import getpass
@@ -24,7 +20,6 @@ CACHE_DIR = Path.home() / ".cache" / APP
 CONFIG_PATH = CONFIG_DIR / "config.ini"
 KEY_PATH = CONFIG_DIR / "api_key"
 LATEST_PATH = CACHE_DIR / "latest.req"
-RESULT_DIR = CACHE_DIR / "results"
 MT_RESULTS = CACHE_DIR / "results-mt"
 AI_RESULTS = CACHE_DIR / "results-ai"
 AI_REQUEST = CACHE_DIR / "ai.req"
@@ -34,7 +29,7 @@ HOTKEY_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_ai_hotkey.lua")
 PROCESSOR_KEY = "engine/processors/@before 0"
 PROCESSOR_VALUE = "lua_processor@*rime_llm_ai_hotkey"
 LUA_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_translator.lua")
-RIME_DIR = Path.home() / ".config/ibus/rime"
+RIME_DIR = Path.home() / ".config/ibus/rime-llm"
 DEFAULT_LANGUAGES = "en:English,ja:Japanese"
 PATCH_KEY = "engine/filters/+"
 LEGACY_PATCH_KEY = "engine/filters/@before 0"
@@ -51,7 +46,7 @@ def config_default():
     cfg["translation"] = {"enabled": "true", "languages": DEFAULT_LANGUAGES,
                           "min_characters": "1", "debounce_ms": "450",
                           "offline_enabled": "true", "source_language": "auto",
-                          "timeout_seconds": "10", "max_tokens": "320"}
+                          "timeout_seconds": "10", "max_tokens": "4096"}
     return cfg
 
 def load_config():
@@ -138,7 +133,7 @@ def translate(text, cfg, api_key, opener=None, drafts=None):
                          {"source": text, "offline_mt_drafts": drafts or {}},
                          ensure_ascii=False)}],
         "temperature": 0.2,
-        "max_tokens": cfg.getint("translation", "max_tokens", fallback=320),
+        "max_tokens": cfg.getint("translation", "max_tokens", fallback=4096),
         "stream": False
     }, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": APP + "/0.1"}
@@ -183,10 +178,25 @@ def encode_results(translations):
     return "".join(lang + "\t" + value.encode("utf-8").hex() + "\n"
                    for lang,value in translations.items())
 
+def read_results(path):
+    result = {}
+    if not path.exists():
+        return result
+    for line in path.read_text(encoding="utf-8").splitlines():
+        fields = line.split("\t", 1)
+        if len(fields) == 2:
+            try:
+                result[fields[0]] = bytes.fromhex(fields[1]).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                continue
+    return {code: text for code, text in result.items() if text.strip()}
+
 def trim_cache(keep=350):
-    entries = sorted(RESULT_DIR.glob("*.res"), key=lambda x: x.stat().st_mtime, reverse=True)
-    for path in entries[keep:]:
-        path.unlink(missing_ok=True)
+    for folder in (MT_RESULTS, AI_RESULTS):
+        entries = sorted(folder.glob("*.res"),
+                         key=lambda x: x.stat().st_mtime, reverse=True)
+        for path in entries[keep:]:
+            path.unlink(missing_ok=True)
 
 def local_translate(text, cfg):
     """Offline Argos packages are loaded by the persistent user worker."""
@@ -202,9 +212,13 @@ def local_translate(text, cfg):
     codes = parse_languages(cfg["translation"]["languages"])
     result = {}
     for code in codes:
-        value = argos.translate(text, src, code)
-        if value and value.strip():
-            result[code] = value.strip().replace("\r", " ").replace("\n", " ")
+        try:
+            value = argos.translate(text, src, code)
+            if value and value.strip():
+                result[code] = value.strip().replace("\r", " ").replace("\n", " ")
+        except Exception as exc:
+            print(APP + ": offline " + code + ": " + type(exc).__name__,
+                  file=sys.stderr, flush=True)
     if not result:
         raise RuntimeError("No offline Argos language models available")
     return result
@@ -236,77 +250,98 @@ def download_models():
         print("Installing offline language model:", src, "->", dst, flush=True)
         package.install_from_path(found.download())
 
-def serve():
-    # Ubuntu Python 3.12 forbids system-wide pip installs; use a private venv.
-    # The service is launched via /usr/bin/python3 and re-execs into that venv.
-    if VENV_PYTHON.is_file() and Path(sys.executable) != VENV_PYTHON:
+class Worker:
+    """One independent queue per process; slow AI never blocks offline MT."""
+    def __init__(self, mode):
+        self.mode = mode
+        self.request = AI_REQUEST if mode == "ai" else LATEST_PATH
+        self.results = AI_RESULTS if mode == "ai" else MT_RESULTS
+        self.marker = None
+        self.done = False
+        self.retry_at = 0
+        self.failures = 0
+
+    def poll(self):
+        try:
+            if not self.request.exists():
+                return False
+            st = self.request.stat()
+            marker = (st.st_mtime_ns, st.st_size)
+            if marker != self.marker:
+                self.marker, self.done = marker, False
+                self.retry_at, self.failures = 0, 0
+            if self.done or time.monotonic() < self.retry_at:
+                return False
+            cfg = load_config()
+            if not cfg.getboolean("translation", "enabled", fallback=False):
+                return False
+            if self.mode == "mt":
+                if not cfg.getboolean("translation", "offline_enabled", fallback=True):
+                    return False
+                delay = max(.2, min(cfg.getint("translation", "debounce_ms") / 1000, 3))
+                if time.time() - st.st_mtime < delay:
+                    return False
+            identifier, source = decode_request(self.request.read_text(encoding="utf-8"))
+            output = self.results / (identifier + ".res")
+            cached = read_results(output)
+            languages = parse_languages(cfg["translation"]["languages"])
+            missing = {code: name for code, name in languages.items() if code not in cached}
+            if not missing:
+                self.done = True
+                return False
+            cfg["translation"]["languages"] = ",".join(code + ":" + name
+                                                         for code, name in missing.items())
+            if self.mode == "ai":
+                key = KEY_PATH.read_text(encoding="utf-8").strip() if KEY_PATH.exists() else ""
+                if not key:
+                    raise RuntimeError("AI hotkey requested but API key is missing")
+                drafts = read_results(MT_RESULTS / (identifier + ".res"))
+                translated = translate(source, cfg, key, drafts=drafts)
+            else:
+                translated = local_translate(source, cfg)
+            cached.update(translated)
+            atomically_write(output, encode_results(cached))
+            trim_cache()
+            if any(code not in cached for code in languages):
+                raise RuntimeError("Some target languages are unavailable")
+            self.done = True
+            self.failures = 0
+            return True
+        except Exception as exc:
+            self.failures += 1
+            delay = min(30, 2 ** min(self.failures, 5))
+            self.retry_at = time.monotonic() + delay
+            # Never log input, drafts, provider response bodies or API secrets.
+            print(APP + ": " + self.mode + ": " + type(exc).__name__ +
+                  "; retry in %ss" % delay, file=sys.stderr, flush=True)
+            return False
+
+def serve(mode="mt"):
+    if mode == "mt" and VENV_PYTHON.is_file() and Path(sys.executable) != VENV_PYTHON:
         os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), str(Path(__file__)), "serve"])
+    import fcntl
     os.umask(0o077)
     for path in (CACHE_DIR, MT_RESULTS, AI_RESULTS):
         private_dir(path)
-    last = {"ai": None, "mt": None}
-    print(APP + ": offline MT worker running; AI is hotkey-only", flush=True)
-    while True:
-        had_work = False
-        for mode, req_path, dest_dir in (
-            ("ai", AI_REQUEST, AI_RESULTS),
-            ("mt", LATEST_PATH, MT_RESULTS)
-        ):
-            try:
-                if not req_path.exists():
-                    continue
-                st = req_path.stat()
-                cfg = load_config()
-                if not cfg.getboolean("translation", "enabled", fallback=False):
-                    continue
-                if mode == "mt":
-                    if not cfg.getboolean("translation", "offline_enabled", fallback=True):
-                        continue
-                    delay = max(.2, min(cfg.getint("translation", "debounce_ms",
-                                                    fallback=450)/1000, 3))
-                    if time.time() - st.st_mtime < delay:
-                        continue
-                marker = (st.st_mtime_ns, st.st_size)
-                if marker == last[mode]:
-                    continue
-                last[mode] = marker
-                identifier, source = decode_request(
-                    req_path.read_text(encoding="utf-8"))
-                output = dest_dir / (identifier + ".res")
-                if output.exists():
-                    continue
-                if mode == "ai":
-                    key = KEY_PATH.read_text(encoding="utf-8").strip() if KEY_PATH.exists() else ""
-                    if not key:
-                        raise RuntimeError("AI hotkey requested but API key is missing")
-                    mt_draft = MT_RESULTS / (identifier + ".res")
-                    drafts = {}
-                    if mt_draft.exists():
-                        for line in mt_draft.read_text(encoding="utf-8").splitlines():
-                            fields = line.split(None, 1)
-                            if len(fields) == 2 and re.fullmatch(r"[0-9a-f]+", fields[1]):
-                                try:
-                                    drafts[fields[0]] = bytes.fromhex(fields[1]).decode("utf-8")
-                                except UnicodeDecodeError:
-                                    pass
-                    translations = translate(source, cfg, key, drafts=drafts)
-                else:
-                    translations = local_translate(source, cfg)
-                atomically_write(output, encode_results(translations))
-                had_work = True
-            except KeyboardInterrupt:
-                return
-            except Exception as exc:
-                # Avoid logging user text or secrets from translation requests.
-                print(APP + ": " + mode + ": " + type(exc).__name__,
-                      file=sys.stderr, flush=True)
-        if not had_work:
-            time.sleep(.15)
+    with (CACHE_DIR / (mode + ".lock")).open("w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(mode + " worker is already running")
+        worker = Worker(mode)
+        print(APP + ": " + mode + " worker running", flush=True)
+        try:
+            while True:
+                worker.poll()
+                time.sleep(.15)
+        except KeyboardInterrupt:
+            return
 
-def _load_user_patch():
+def _load_user_patch(rime_dir=None):
     import yaml
-    private_dir(RIME_DIR)
-    target = RIME_DIR / "luna_pinyin.custom.yaml"
+    directory = rime_dir or RIME_DIR
+    private_dir(directory)
+    target = directory / "luna_pinyin.custom.yaml"
     content = yaml.safe_load(target.read_text(encoding="utf-8")) if target.exists() else {}
     content = content or {}
     if not isinstance(content, dict):
@@ -343,12 +378,13 @@ def safe_schema_patch():
     if appended != original or legacy == PATCH_VALUE or processor != PROCESSOR_VALUE:
         _save_user_patch(target, content)
 
-def remove_schema_patch():
+def remove_schema_patch(rime_dir=None):
     """Remove only translator-owned schema changes, preserving user settings."""
-    target = RIME_DIR / "luna_pinyin.custom.yaml"
+    directory = rime_dir or RIME_DIR
+    target = directory / "luna_pinyin.custom.yaml"
     if not target.exists():
         return
-    _, content, patch = _load_user_patch()
+    _, content, patch = _load_user_patch(directory)
     changed = False
     if patch.get(LEGACY_PATCH_KEY) == PATCH_VALUE:
         patch.pop(LEGACY_PATCH_KEY)
@@ -380,9 +416,15 @@ def enable():
     if cfg["translation"].get("min_characters") == "3":
         cfg["translation"]["min_characters"] = "1"
         print("Migrated the old minimum length from 3 to 1 Chinese character.")
+    if cfg["translation"].get("max_tokens") == "320":
+        cfg["translation"]["max_tokens"] = "4096"
     save_config(cfg)
-    print("Offline MT filter + Ctrl+Shift+Return AI hotkey enabled.")
-    print("Redeploy Rime and log out/in for changes to take effect.")
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+    subprocess.run(["systemctl", "--user", "enable", "--now",
+                    "rime-llm-translator.service"], check=False)
+    print("Offline MT and AI shortcut enabled for Rime Translator.")
+    print("Log out/in. Add Chinese > Rime Translator in Settings > Keyboard > Input Sources.")
+    print("Choose Luna Pinyin with Ctrl+grave if needed. Original Rime is unchanged.")
 
 def disable():
     """Fail-safe revert without uninstalling Rime or deleting API key."""
@@ -391,7 +433,7 @@ def disable():
     cfg["translation"]["enabled"] = "false"
     save_config(cfg)
     print("AI filter removed from user config; user API key retained.")
-    print("Redeploy Rime and log out/in to clear compiled Rime schema.")
+    print("Switch to the original Rime input source to return to native input.")
 
 def install_user_files():
     if os.geteuid() == 0:
@@ -399,7 +441,8 @@ def install_user_files():
     if not LUA_SOURCE.exists():
         raise RuntimeError("Install the .deb package first")
     private_dir(CACHE_DIR)
-    private_dir(RESULT_DIR)
+    private_dir(MT_RESULTS)
+    private_dir(AI_RESULTS)
     private_dir(RIME_DIR / "lua")
     shutil.copy2(LUA_SOURCE, RIME_DIR / "lua/rime_llm_translator.lua")
     if HOTKEY_SOURCE.exists():
@@ -409,9 +452,10 @@ def install_user_files():
 def sync():
     """Noninteractive update: retain provider configuration and API key."""
     install_user_files()
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     subprocess.run(["systemctl", "--user", "restart",
                     "rime-llm-translator.service"], check=False)
-    print("Updated plugin files; did not enable the Rime filter.")
+    print("Updated Rime Translator plugin files; did not enable its filter.")
     print("Log out and in to reload Rime, or use its redeploy action.")
 
 def setup(args):
@@ -443,8 +487,8 @@ def setup(args):
         print("Background service enabled.")
     except (OSError, subprocess.CalledProcessError):
         print("Could not enable user service. Run: systemctl --user enable --now rime-llm-translator.service")
-    print("Setup complete. Rime is unchanged until you run: rime-llm-translator enable")
-    print("Translation candidates appear after the asynchronous reply and next menu refresh.")
+    print("Setup complete. Enable the separate input source: rime-llm-translator enable")
+    print("Rime Translator refreshes translation candidates automatically while focused.")
 
 def doctor():
     print("Configuration:", CONFIG_PATH, CONFIG_PATH.is_file())
@@ -452,6 +496,8 @@ def doctor():
     print("Lua plugin:", (RIME_DIR / "lua/rime_llm_translator.lua").is_file())
     print("AI shortcut Lua:", (RIME_DIR / "lua/rime_llm_ai_hotkey.lua").is_file())
     print("Argos offline venv:", VENV_PYTHON.is_file())
+    print("Rime Translator data:", RIME_DIR)
+    print("IBus frontend:", Path("/usr/libexec/rime-llm-translator/ibus-engine-rime-llm").is_file())
     try:
         _, _, patch = _load_user_patch()
         print("Rime filter enabled:", PATCH_VALUE in patch.get(PATCH_KEY, []) or patch.get(LEGACY_PATCH_KEY) == PATCH_VALUE)
@@ -462,13 +508,13 @@ def doctor():
         cfg = load_config()
         print("Provider:", cfg["provider"]["base_url"], cfg["provider"]["model"])
         print("Languages:", cfg["translation"]["languages"])
-    subprocess.run(["systemctl", "--user", "is-active", "rime-llm-translator.service"],
+    subprocess.run(["systemctl", "--user", "is-active", "rime-llm-translator.service", "rime-llm-ai.service"],
                    check=False)
 
 def main():
     ap = argparse.ArgumentParser(description="Rime offline MT and hotkey-only AI")
-    ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve",
-                                        "doctor", "install-offline", "download-models"],
+    ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "serve-ai",
+                                        "doctor", "install-offline", "download-models", "restore-native"],
                     help="Action")
     args = ap.parse_args()
     os.umask(0o077)
@@ -483,10 +529,16 @@ def main():
             disable()
         elif args.command == "serve":
             serve()
+        elif args.command == "serve-ai":
+            serve("ai")
         elif args.command == "install-offline":
             install_offline_models()
         elif args.command == "download-models":
             download_models()
+        elif args.command == "restore-native":
+            remove_schema_patch(Path.home() / ".config/ibus/rime")
+            print("Removed only preview1-4 translator patches from original Rime.")
+            print("Redeploy original Rime and log out/in. API key and dictionaries retained.")
         else:
             doctor()
     except (ValueError, RuntimeError, OSError) as exc:

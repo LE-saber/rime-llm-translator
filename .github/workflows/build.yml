@@ -17,7 +17,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml g++ librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin
+          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-ibus-1.0 g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth
       - name: Syntax check
         run: |
           python3 -m py_compile src/rime_llm_translator.py
@@ -52,17 +52,31 @@ jobs:
       - name: Inspect installer
         run: |
           dpkg-deb -c dist/*.deb
-          test "$(dpkg-deb -f dist/*.deb Architecture)" = all
+          test "$(dpkg-deb -f dist/*.deb Architecture)" = amd64
           test "$(dpkg-deb -f dist/*.deb Package)" = rime-llm-translator
+          sha256sum --check dist/SHA256SUMS
       - name: Smoke-test installable package
         run: |
           sudo apt-get install -y ./dist/*.deb
           command -v rime-llm-translator
           rime-llm-translator doctor
+          test -x /usr/libexec/rime-llm-translator/ibus-engine-rime-llm
+          systemd-analyze --user verify packaging/rime-llm-translator.service packaging/rime-llm-ai.service
+      - name: IBus idle candidate refresh without another key
+        run: |
+          export HOME="$RUNNER_TEMP/ibus-home"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/ibus-runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
       - uses: actions/upload-artifact@v4
         with:
           name: rime-llm-translator-ubuntu24.04
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/SHA256SUMS
+            README_CN.md
+            docs/MANUAL_TEST.md
           if-no-files-found: error
           retention-days: 30
       - name: Publish tagged release

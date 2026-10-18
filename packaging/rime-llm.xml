@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component>
+  <name>im.rime.LLMTranslator</name>
+  <description>Offline translation and optional AI for Rime</description>
+  <exec>/usr/libexec/rime-llm-translator/ibus-engine-rime-llm --ibus</exec>
+  <version>0.3.0</version>
+  <author>Rime Developers; LE-saber</author>
+  <license>GPL-3.0-or-later</license>
+  <homepage>https://github.com/LE-saber/rime-llm-translator</homepage>
+  <engines>
+    <engine>
+      <name>rime-llm</name>
+      <language>zh</language>
+      <license>GPL-3.0-or-later</license>
+      <author>Rime Developers; LE-saber</author>
+      <icon>/usr/share/ibus-rime/icons/rime.png</icon>
+      <layout>default</layout>
+      <longname>Rime Translator</longname>
+      <description>朙月拼音 · 离线翻译 · Ctrl+Shift+Enter AI 修正</description>
+      <rank>0</rank>
+      <symbol>译</symbol>
+    </engine>
+  </engines>
+</component>

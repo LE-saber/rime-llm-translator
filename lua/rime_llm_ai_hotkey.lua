@@ -16,7 +16,8 @@ local function config()
 end
 local function id_for(text,langs,o)
   local s=text.."|"..langs.."|"..
-    (o["provider.model"] or "").."|"..(o["provider.base_url"] or "")
+    (o["provider.model"] or "").."|"..(o["provider.base_url"] or "").."|"..
+    (o["translation.source_language"] or "auto")
   local a,b=5381,0
   for i=1,#s do
     local n=s:byte(i)
@@ -39,6 +40,9 @@ local function dispatch(env)
   if (o["translation.enabled"] or "false"):lower() ~= "true" then return false end
   local langs=o["translation.languages"] or "en:English,ja:Japanese"
   local id=id_for(text,langs,o)
+  ctx:set_property("rime_llm_source_input", ctx.input)
+  ctx:set_property("rime_llm_source", text)
+  ctx:set_property("rime_llm_id", id)
   local folder=home.."/.cache/rime-llm-translator"
   local target=folder.."/ai.req"
   -- Reuse the result if the same text was already corrected.
@@ -59,8 +63,17 @@ end
 
 return function(key, env)
   if not key then return 2 end
+  -- Private in-process refresh from our IBus frontend's GLib main loop.
+  -- No OS key is injected, and no translation request is generated here.
+  if key.keycode == 0xffffff then
+    pcall(function()
+      local ctx=env.engine.context
+      if ctx:is_composing() then ctx:refresh_non_confirmed_composition() end
+    end)
+    return 1
+  end
   -- Test modifiers independently; Rime may render Control+Shift or Shift+Control.
-  if not (key:ctrl() and key:shift() and not key:release()
+  if not (key:ctrl() and key:shift() and not key:alt() and not key:super() and not key:release()
       and key.keycode == 0xff0d) then return 2 end
   if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
     io.stderr:write("Rime AI hotkey matched; dispatching\n")
