@@ -22,3 +22,13 @@ diff --git a/inference/src/translator/translation_model.h b/inference/src/transl
    using Config = Ptr<Options>;
    using ShortlistGenerator = Ptr<data::ShortlistGenerator const>;
  
+diff --git a/inference/src/translator/translation_model.cpp b/inference/src/translator/translation_model.cpp
+--- a/inference/src/translator/translation_model.cpp
++++ b/inference/src/translator/translation_model.cpp
+@@ -102,3 +102,6 @@
+   }
+ 
++  // Rime: binary::loadItems owns all decoded bytes (mapped=false).
++  // Release the raw model before graph allocation duplicates decoded tensors.
++  memory_.models.clear();
+   for (auto& scorer : scorerEnsemble) {
