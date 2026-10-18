@@ -29,7 +29,7 @@ for DIRECTION in zh-en en-ja; do
     -exec install -m 0644 '{}' "$ROOT/usr/share/rime-llm-translator/models/$DIRECTION/" \;
 done
 sha256sum .build/mt/rime-mt native/mt/models.lock.json native/mt/engine.lock native/mt/main.cpp \
-  native/mt/CMakeLists.txt packaging/build-mt.sh packaging/fetch-mt-models.py \
+  native/mt/CMakeLists.txt native/mt/low-memory.patch packaging/build-mt.sh packaging/fetch-mt-models.py \
   | sha256sum | cut -d ' ' -f 1 > "$ROOT/usr/share/rime-llm-translator/mt-revision"
 # Complete corresponding third-party inference sources, including dependency
 # license texts, pinned commits and the unmodified Mozilla license.
@@ -38,7 +38,7 @@ tar --exclude-vcs --exclude=inference/3rd_party/emsdk \
 install -m 0644 .build/mt/inference-source.tar.xz .build/mt/SOURCE_REVISIONS \
   native/mt/engine.lock "$ROOT/usr/share/doc/$PACKAGE/"
 mkdir -p "$ROOT/usr/share/doc/$PACKAGE/mt-wrapper"
-install -m 0644 native/mt/main.cpp native/mt/CMakeLists.txt packaging/build-mt.sh \
+install -m 0644 native/mt/main.cpp native/mt/CMakeLists.txt native/mt/low-memory.patch packaging/build-mt.sh \
   "$ROOT/usr/share/doc/$PACKAGE/mt-wrapper/"
 install -m 0644 lua/rime_llm_translator.lua \
  "$ROOT/usr/share/rime-llm-translator/rime_llm_translator.lua"

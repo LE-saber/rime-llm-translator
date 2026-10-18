@@ -1,0 +1,24 @@
+diff --git a/inference/marian-fork/src/tensors/tensor_allocator.h b/inference/marian-fork/src/tensors/tensor_allocator.h
+--- a/inference/marian-fork/src/tensors/tensor_allocator.h
++++ b/inference/marian-fork/src/tensors/tensor_allocator.h
+@@ -11,6 +11,6 @@ namespace marian {
+ class TensorAllocator {
+ private:
+-  const size_t CHUNK = 128;
++  const size_t CHUNK = 4; // Rime: bounded single-request CPU inference.
+   const size_t MBYTE = 1024 * 1024;
+ #if defined(WASM)
+   // Drastically reduce the size of allocation leaps as Wasm is a heavily memory
+diff --git a/inference/src/translator/translation_model.h b/inference/src/translator/translation_model.h
+--- a/inference/src/translator/translation_model.h
++++ b/inference/src/translator/translation_model.h
+@@ -26,4 +26,9 @@ class TranslationModel {
+  public:
++  // Rime uses the model's existing tokenizer to bound individual requests.
++  size_t sourceTokenCount(const std::string& text) const {
++    return vocabs_.sources().front()->encode(text, false, true).size();
++  }
++
+   using Config = Ptr<Options>;
+   using ShortlistGenerator = Ptr<data::ShortlistGenerator const>;
+ 

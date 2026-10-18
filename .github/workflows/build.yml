@@ -25,7 +25,7 @@ jobs:
           path: |
             .build/mozilla
             .build/mt
-          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'packaging/build-mt.sh') }}
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'native/mt/low-memory.patch', 'packaging/build-mt.sh') }}
           restore-keys: mt-ubuntu24-
       - name: Syntax check
         run: |
@@ -65,7 +65,7 @@ jobs:
           path: |
             .build/mozilla
             .build/mt
-          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'packaging/build-mt.sh') }}
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'native/mt/low-memory.patch', 'packaging/build-mt.sh') }}
       - name: Inspect installer
         run: |
           dpkg-deb -c dist/*.deb

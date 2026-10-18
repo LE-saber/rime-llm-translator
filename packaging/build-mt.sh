@@ -7,6 +7,11 @@ if [ ! -d "$SOURCE/.git" ]; then
   git clone --filter=blob:none --no-checkout https://github.com/mozilla/translations.git "$SOURCE"
 fi
 git -C "$SOURCE" checkout --detach "$REVISION"
+PATCH="$PWD/native/mt/low-memory.patch"
+if ! git -C "$SOURCE" apply --reverse --check "$PATCH" 2>/dev/null; then
+  git -C "$SOURCE" apply --check "$PATCH"
+  git -C "$SOURCE" apply "$PATCH"
+fi
 # Only inference dependencies, never emsdk, training tools, CUDA or NCCL.
 git -C "$SOURCE" submodule update --init --depth 1 \
   inference/3rd_party/ssplit-cpp \

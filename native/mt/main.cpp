@@ -8,6 +8,39 @@
 #include <opencc/SimpleConverter.hpp>
 #include "translator/service.h"
 
+// Use the model's real tokenizer, split on sentence/word boundaries, and never
+// discard a suffix. Each piece stays below the backend's 64-token wrap limit.
+std::vector<std::string> chunks(const std::string& input,
+    const std::shared_ptr<marian::bergamot::TranslationModel>& model) {
+  std::vector<std::string> output;
+  size_t start = 0, previous = 0, boundary = 0;
+  for (size_t end = 0; end < input.size();) {
+    size_t begin = end;
+    do { ++end; } while (end < input.size() && (static_cast<unsigned char>(input[end]) & 0xc0) == 0x80);
+    auto character = input.substr(begin, end - begin);
+    if (model->sourceTokenCount(input.substr(start, end - start)) > 48 && previous > start) {
+      size_t cut = boundary > start ? boundary : previous;
+      auto part = input.substr(start, cut - start);
+      if (part.find_first_not_of(" \r\n\t") != std::string::npos) output.push_back(part);
+      start = end = cut;
+      boundary = previous = start;
+      continue;
+    }
+    previous = end;
+    if (character == " " || character == "\t" || character == "," || character == "，") boundary = end;
+    if (character == "。" || character == "！" || character == "？" || character == "\n" ||
+        ((character == "." || character == "!" || character == "?") &&
+         (end == input.size() || input[end] == ' '))) {
+      auto part = input.substr(start, end - start);
+      if (part.find_first_not_of(" \r\n\t") != std::string::npos) output.push_back(part);
+      start = boundary = previous = end;
+    }
+  }
+  if (start < input.size() && input.substr(start).find_first_not_of(" \r\n\t") != std::string::npos)
+    output.push_back(input.substr(start));
+  return output;
+}
+
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   // This binary's baseline is x86-64. intgemm dispatches its own kernels.
@@ -41,8 +74,14 @@ int main(int argc, char** argv) {
         auto options = parseOptionsFromFilePath(std::string(argv[1]) + "/" + direction + "/config.yml");
         model = std::make_shared<TranslationModel>(options, 1);
       }
-      auto responses = service.translateMultiple(model, {std::move(input)}, {ResponseOptions()});
-      auto output = responses.at(0).target.text;
+      std::string output;
+      for (auto& part : chunks(input, model)) {
+        auto responses = service.translateMultiple(model, {std::move(part)}, {ResponseOptions()});
+        auto translated = responses.at(0).target.text;
+        if (translated.empty()) throw std::runtime_error("empty segment translation");
+        if (!output.empty() && direction == "zh-en") output += ' ';
+        output += translated;
+      }
       if (output.empty() || output.size() > 32768) throw std::runtime_error("invalid output");
       std::cout << json({{"text", output}}).dump() << std::endl;
     } catch (const std::exception&) {
