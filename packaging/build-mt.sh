@@ -8,9 +8,17 @@ if [ ! -d "$SOURCE/.git" ]; then
 fi
 git -C "$SOURCE" checkout --detach "$REVISION"
 PATCH="$PWD/native/mt/low-memory.patch"
-if ! git -C "$SOURCE" apply --reverse --check "$PATCH" 2>/dev/null; then
+PATCH_HASH="$(sha256sum "$PATCH" | cut -d ' ' -f 1)"
+PREVIOUS_PATCH="$(cat "$SOURCE/.rime-mt-patch" 2>/dev/null || true)"
+if [ "$PREVIOUS_PATCH" != "$PATCH_HASH" ] || ! git -C "$SOURCE" apply --reverse --check "$PATCH" 2>/dev/null; then
+  # Only generated third-party checkout files owned by this build patch.
+  git -C "$SOURCE" restore --source="$REVISION" -- \
+    inference/marian-fork/src/tensors/tensor_allocator.h \
+    inference/src/translator/translation_model.h \
+    inference/src/translator/translation_model.cpp
   git -C "$SOURCE" apply --check "$PATCH"
   git -C "$SOURCE" apply "$PATCH"
+  printf '%s\n' "$PATCH_HASH" > "$SOURCE/.rime-mt-patch"
 fi
 # Only inference dependencies, never emsdk, training tools, CUDA or NCCL.
 git -C "$SOURCE" submodule update --init --depth 1 \
