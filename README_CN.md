@@ -1,6 +1,6 @@
 # Rime LLM Translator — 轻量离线机翻 + 按键 AI 修正
 
-目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview8` 使用原生 Bergamot INT8，并支持自定义 AI 快捷键。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
+目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview9` 使用原生 Bergamot INT8，并支持自定义 AI 快捷键及双击 Alt。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
 
 普通输入提供 `🌐 MT · EN/JA` 草稿；仅 AI 快捷键（默认 **Ctrl+Shift+Enter**）请求配置的 DeepSeek / OpenAI 兼容 API 修正。AI 读取中文原文和已有草稿，结果标为 `✦ AI · EN/JA` 并优先显示。API Key 可留空。
 
@@ -9,7 +9,7 @@
 下载最新成功的 [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，解压后：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview8_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview9_amd64.deb
 ```
 
 新用户运行：
@@ -42,7 +42,15 @@ rime-llm-translator hotkey
 
 第一条修改，第二条查看。只更新配置中的 `ai_hotkey`，保留接口、模型、API Key 和词库；`setup` 也会询问快捷键，`doctor` 会显示当前值。
 
-从 preview7 升级后，先运行 `sync && enable` 并注销重新登录一次以加载新版 Lua。此后改键立即生效，不必重启服务或重新部署，原快捷键不再触发 AI。使用时保持候选未上屏，选中中文候选后按新组合键；繁体中文输入照常保留。
+双击 Alt（需 preview9）：
+
+```bash
+rime-llm-translator hotkey DoubleAlt
+```
+
+选中未上屏的中文候选，在 400 毫秒内快速按下并松开同一个 Alt 两次，建议用左 Alt；部分键盘的右 Alt 是 AltGr。按住、自动连发、夹入其他键、切换窗口或取消输入都会打断手势。只有两次完整点按才请求 AI，不自动上屏。候选中文期间，Alt 单键保留给这个手势；Alt 组合键仍转交正常处理，没有中文候选时 Alt 照常使用。
+
+升级后，先运行 `sync && enable` 并注销重新登录一次以加载新版前端及 Lua。此后改键立即生效，不必重启服务或重新部署，原快捷键不再触发 AI。使用时保持候选未上屏，选中中文候选后按新组合键或双击 Alt；繁体中文输入照常保留。
 
 格式：`Control`（也可写 `Ctrl`）、`Alt`、`Shift`、`Super` 的组合加一个字母、数字、`F1`–`F12`、`Return`（也可写 `Enter`）或 `space`。必须包含 Control/Alt/Super 中至少一个。例如 `Control+Shift+F8`。请选择桌面、应用和虚拟机宿主未占用的组合；程序不能自动检测全部冲突。这是输入法内快捷键，无需在 Ubuntu 的全局快捷键设置中注册。
 

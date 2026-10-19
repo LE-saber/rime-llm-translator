@@ -24,6 +24,7 @@ struct _IBusRimeEngine {
   guint refresh_timer;
   gboolean focused;
   gchar* cache_stamp;
+  guint shortcut_epoch;
 };
 
 struct _IBusRimeEngineClass {
@@ -266,6 +267,7 @@ ibus_rime_engine_focus_in (IBusEngine *engine)
 {
   IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
   rime_engine->focused = TRUE;
+  ++rime_engine->shortcut_epoch;
   ibus_engine_register_properties(engine, rime_engine->props);
   if (!rime_engine->session_id) {
     ibus_rime_create_session(rime_engine);
@@ -276,13 +278,16 @@ ibus_rime_engine_focus_in (IBusEngine *engine)
 static void
 ibus_rime_engine_focus_out (IBusEngine *engine)
 {
-  ((IBusRimeEngine*)engine)->focused = FALSE;
+  IBusRimeEngine* self = (IBusRimeEngine*)engine;
+  self->focused = FALSE;
+  ++self->shortcut_epoch;
 }
 
 static void
 ibus_rime_engine_reset (IBusEngine *engine)
 {
   IBusRimeEngine* self = (IBusRimeEngine*)engine;
+  ++self->shortcut_epoch;
   if (self->session_id) rime_api->clear_composition(self->session_id);
   g_clear_pointer(&self->cache_stamp, g_free);
   ibus_rime_engine_update(self);
@@ -590,12 +595,12 @@ ibus_rime_engine_process_key_event (IBusEngine *engine,
                                     guint       keycode,
                                     guint       modifiers)
 {
+  IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
   // ignore super key
   if (modifiers & IBUS_SUPER_MASK) {
+    ++rime_engine->shortcut_epoch;
     return FALSE;
   }
-  
-  IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
 
   modifiers &= (IBUS_RELEASE_MASK | IBUS_LOCK_MASK | IBUS_SHIFT_MASK |
                 IBUS_CONTROL_MASK | IBUS_MOD1_MASK);
@@ -607,6 +612,13 @@ ibus_rime_engine_process_key_event (IBusEngine *engine,
     ibus_rime_engine_update(rime_engine);
     return FALSE;
   }
+  /* Double-tap timing uses elapsed monotonic time, never Lua CPU time. */
+  gchar clock_ms[32], epoch[32];
+  g_snprintf(clock_ms, sizeof(clock_ms), "%" G_GINT64_FORMAT,
+             rime_engine->focused ? g_get_monotonic_time() / 1000 : 0);
+  g_snprintf(epoch, sizeof(epoch), "%u", rime_engine->shortcut_epoch);
+  rime_api->set_property(rime_engine->session_id, "rime_llm_key_time_ms", clock_ms);
+  rime_api->set_property(rime_engine->session_id, "rime_llm_key_epoch", epoch);
   gboolean result =
       rime_api->process_key(rime_engine->session_id, keyval, modifiers);
   ibus_rime_engine_update(rime_engine);

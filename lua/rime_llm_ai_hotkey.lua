@@ -61,8 +61,55 @@ local function dispatch(env,o)
   return ok and true or false
 end
 
-local function matching_config(key)
+local function double_alt(key,env,o)
+  local ctx=env.engine.context
+  local now=tonumber(ctx:get_property("rime_llm_key_time_ms")) or 0
+  local epoch=ctx:get_property("rime_llm_key_epoch")
+  local candidate=ctx:get_selected_candidate()
+  local is_alt=key.keycode==0xffe9 or key.keycode==0xffea
+  if not is_alt or key:ctrl() or key:shift() or key:super() or now<=0
+      or not ctx:is_composing() or not ctx:has_menu() or not candidate
+      or tostring(candidate.type):match("^llm_")
+      or (o["translation.enabled"] or "false"):lower()~="true" then
+    env.alt_tap=nil
+    return nil
+  end
+  local state=env.alt_tap
+  if not state or state.epoch~=epoch or state.input~=ctx.input or state.text~=candidate.text then
+    state={epoch=epoch,input=ctx.input,text=candidate.text}
+    env.alt_tap=state
+  end
+  if key:release() then
+    if state.invalid or state.down~=key.keycode or now-state.down_at>400 then
+      env.alt_tap=nil
+      return nil,true
+    end
+    state.down=nil
+    if state.first and state.key==key.keycode and now-state.first<=400 then
+      env.alt_tap=nil
+      return o
+    end
+    state.first=now
+    state.key=key.keycode
+  else
+    if state.down then
+      -- Autorepeat/holding Alt is not a second tap.
+      state.invalid=true
+      return nil,true
+    end
+    if state.first and (now-state.first>400 or state.key~=key.keycode) then state.first=nil end
+    state.down=key.keycode
+    state.down_at=now
+  end
+  -- Reserve pure Alt only while composing; Alt+other-key still passes through.
+  return nil,true
+end
+
+local function matching_config(key,env)
   local o=config()
+  if o["translation.ai_hotkey"]=="DoubleAlt" then return double_alt(key,env,o) end
+  env.alt_tap=nil
+  if key:release() then return nil end
   local shortcut=KeyEvent(o["translation.ai_hotkey"] or "Control+Shift+Return")
   -- Require an explicit modifier, never intercept ordinary Chinese typing.
   if not (shortcut:ctrl() or shortcut:alt() or shortcut:super()) then return nil end
@@ -87,10 +134,14 @@ return function(key, env)
     end)
     return 1
   end
-  if key:release() or not (key:ctrl() or key:alt() or key:super()) then return 2 end
+  if not (key:ctrl() or key:alt() or key:super() or key.keycode==0xffe9 or key.keycode==0xffea) then
+    env.alt_tap=nil
+    return 2
+  end
   -- Invalid config or an unreadable file must never swallow input or dispatch AI.
-  local matched,o=pcall(matching_config,key)
-  if not matched or not o then return 2 end
+  local matched,o,pending=pcall(matching_config,key,env)
+  if not matched then env.alt_tap=nil; return 2 end
+  if not o then return pending and 1 or 2 end
   if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
     io.stderr:write("Rime AI hotkey matched; dispatching\n")
   end

@@ -120,7 +120,8 @@ class TranslatorTests(unittest.TestCase):
         self.assertEqual(tr.config_default()["translation"]["ai_hotkey"], "Control+Shift+Return")
         for raw, expected in (("Ctrl+Alt+J", "Control+Alt+j"),
                               ("shift + ctrl + enter", "Control+Shift+Return"),
-                              ("Super+f8", "Super+F8"), ("Alt+space", "Alt+space")):
+                              ("Super+f8", "Super+F8"), ("Alt+space", "Alt+space"),
+                              (" doublealt ", "DoubleAlt")):
             with self.subTest(raw=raw):
                 self.assertEqual(tr.normalize_hotkey(raw), expected)
 

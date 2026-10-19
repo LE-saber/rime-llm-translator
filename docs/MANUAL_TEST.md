@@ -7,7 +7,7 @@
 
 1. 下载对应 GitHub Actions 的 artifact，解压 `.deb` 和 `SHA256SUMS`。
 2. 在 `.deb` 所在目录（artifact 的 `dist/`）运行 `sha256sum --check SHA256SUMS`。
-3. `sudo apt install ./rime-llm-translator_0.3.0~preview8_amd64.deb`。
+3. `sudo apt install ./rime-llm-translator_0.3.0~preview9_amd64.deb`。
 4. 使用桌面普通用户运行 `rime-llm-translator install-offline`，应只校验包内模型，不运行 pip 或联网下载。若 preview5 已空间耗尽，按 [清理方案](UPGRADE_CLEANUP.md) 先处理共享 pip 下载缓存。
 5. 新用户运行 `rime-llm-translator setup`，配置语言、可选 AI 地址及密钥；只用机翻可留空。升级用户改运行 `sync`，保留已有配置与 Key。
 6. `rime-llm-translator enable`。
@@ -38,6 +38,9 @@ preview1–4 升级用户可先运行 `rime-llm-translator restore-native`，重
 | 在中文候选上按 AI 快捷键（默认 Ctrl+Shift+Enter） | 不提交中文，排队一次 AI 修正，完成后自动显示 `✦ AI · EN/JA` |
 | `rime-llm-translator hotkey 'Control+Alt+j'` 后保持输入法开启 | 查看命令 `hotkey` 与 `doctor` 显示新组合，按新组合请求 AI，无需重启；原 Ctrl+Shift+Enter 不再请求 AI |
 | 改键后输入繁体「謝謝」，以及普通空格选词、Esc 取消 | 繁体候选和中文上屏正常，未按新快捷键不请求 AI |
+| `rime-llm-translator hotkey DoubleAlt` 后选中中文候选，400 ms 内两次点按左 Alt | 只请求一次 AI，保留繁体原文，不自动上屏；无需再改全局快捷键 |
+| 单次 Alt、长按/连发、两次间隔超过 400 ms、混用左右 Alt | 不请求 AI；无中文候选时 Alt 照常处理 |
+| 第一次 Alt 后输入其他键、切换窗口或取消输入 | 手势取消，之后单次 Alt 不请求 AI；Alt+其他键保持正常处理 |
 | `rime-llm-translator hotkey 'j'` 或未知按键名 | 拒绝保存，原有效快捷键和其他配置不变 |
 | 对已经完成修正的相同文本再按快捷键 | 使用缓存，不产生新请求 |
 | AI 请求等待期间输入另一段中文 | 新的 MT 继续处理，不等待 AI 网络超时 |

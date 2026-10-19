@@ -88,13 +88,15 @@ def parse_languages(raw):
     return result
 
 def normalize_hotkey(raw):
+    if raw.strip().lower() == "doublealt":
+        return "DoubleAlt"
     parts = [part.strip() for part in raw.split("+")]
     aliases = {"ctrl": "Control", "control": "Control", "shift": "Shift",
                "alt": "Alt", "super": "Super"}
     modifiers = [aliases.get(part.lower()) for part in parts[:-1]]
     if (not modifiers or None in modifiers or len(set(modifiers)) != len(modifiers)
             or not set(modifiers).intersection({"Control", "Alt", "Super"})):
-        raise ValueError("AI shortcut needs Control, Alt or Super; e.g. Control+Alt+j")
+        raise ValueError("Use DoubleAlt or a combination with Control, Alt or Super; e.g. Control+Alt+j")
     key = parts[-1].lower()
     if key in ("enter", "return"):
         key = "Return"
@@ -115,8 +117,8 @@ def hotkey(binding=None):
         save_config(cfg)
     print("AI shortcut:", value)
     if binding is not None:
-        print("Effective immediately with the preview8 Lua plugin loaded; no service restart needed.")
-        print("After upgrading from preview7: run sync and log out/in once to load the new plugin.")
+        print("Effective immediately with the current frontend and Lua plugin loaded; no service restart needed.")
+        print("After upgrading: run sync and log out/in once to load the new frontend and plugin.")
 
 
 def chat_url(base):
@@ -485,7 +487,7 @@ def setup(args):
     cfg["provider"]["model"] = ask("Model", cfg["provider"]["model"])
     cfg["translation"]["languages"] = ask("Target languages", cfg["translation"]["languages"])
     parse_languages(cfg["translation"]["languages"])
-    cfg["translation"]["ai_hotkey"] = normalize_hotkey(ask("AI shortcut (e.g. Control+Alt+j)",
+    cfg["translation"]["ai_hotkey"] = normalize_hotkey(ask("AI shortcut (e.g. DoubleAlt or Control+Alt+j)",
                                                          cfg["translation"]["ai_hotkey"]))
     save_config(cfg)
     key = getpass.getpass("API key (blank = keep current): ").strip()

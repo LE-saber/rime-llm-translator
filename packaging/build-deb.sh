@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.3.0~preview8}"
+VERSION="${VERSION:-0.3.0~preview9}"
 ARCH="$(dpkg --print-architecture)"
 PACKAGE="rime-llm-translator"
 bash packaging/build-mt.sh

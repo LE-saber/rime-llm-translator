@@ -155,6 +155,63 @@ try:
     assert request_text.startswith("謝謝"), "AI did not retain Traditional Chinese source"
     assert len(commits) == before and not forwarded
     print("PASS: live shortcut changes, exact modifiers, invalid config and Traditional Chinese", flush=True)
+    # Double Alt is a clean press/release pair twice, measured by the frontend's
+    # monotonic clock. Delays below deliberately pump GLib rather than busy-wait.
+    (cache / "ai.req").unlink()
+    subprocess.run(["rime-llm-translator", "hotkey", "DoubleAlt"], check=True)
+    def alt_tap(code=0xffe9):
+        context.process_key_event(code, 0, 0)
+        return context.process_key_event(code, 0, 8 | (1 << 30))
+    def no_double_request(label):
+        assert not (cache / "ai.req").exists(), label
+        assert len(commits) == before and not forwarded, label + " changed input"
+        pump(.45)
+    alt_tap()
+    no_double_request("single Alt must not request AI")
+    alt_tap()
+    no_double_request("two taps more than 400 ms apart must not request AI")
+    context.process_key_event(0xffe9, 0, 0)
+    pump(.45)
+    context.process_key_event(0xffe9, 0, 8 | (1 << 30))
+    alt_tap()
+    no_double_request("a held Alt followed by one tap must not request AI")
+    context.process_key_event(0xffe9, 0, 0)
+    context.process_key_event(0xffe9, 0, 8)  # Repeated press before release.
+    context.process_key_event(0xffe9, 0, 8 | (1 << 30))
+    alt_tap()
+    no_double_request("Alt autorepeat must not count as a tap")
+    alt_tap()
+    context.process_key_event(0xffe9, 0, 0)
+    context.process_key_event(ord("j"), 0, 8)
+    context.process_key_event(0xffe9, 0, 8 | (1 << 30))
+    alt_tap()
+    no_double_request("Alt+another key must cancel the tap sequence")
+    alt_tap()
+    alt_tap(0xffea)
+    no_double_request("mixing left and right Alt must not count as double Alt")
+    alt_tap()
+    context.focus_out()
+    pump(.05)
+    context.focus_in()
+    pump(.05)
+    alt_tap()
+    no_double_request("changing application focus must cancel the tap sequence")
+    alt_tap()
+    context.reset()
+    for letter in "xiexie":
+        context.process_key_event(ord(letter), 0, 0)
+    alt_tap()
+    no_double_request("a new composition must not inherit the previous Alt tap")
+    alt_tap()
+    assert alt_tap(), "double Alt was not handled"
+    wait_for(lambda: (cache / "ai.req").is_file(), "double Alt explicitly requests AI")
+    source = bytes.fromhex((cache / "ai.req").read_text().splitlines()[1]).decode()
+    assert source.startswith("謝謝"), "double Alt changed the Traditional Chinese source"
+    (cache / "ai.req").unlink()
+    alt_tap()
+    assert not (cache / "ai.req").exists(), "third tap must not trigger a second request"
+    assert len(commits) == before and not forwarded
+    print("PASS: double Alt, timeout, held/repeated keys, interrupted taps and focus/reset safety", flush=True)
     context.reset()
 finally:
     if worker:
