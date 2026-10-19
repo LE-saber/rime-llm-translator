@@ -3,6 +3,7 @@
 import argparse
 import configparser
 import getpass
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,7 @@ PROCESSOR_VALUE = "lua_processor@*rime_llm_ai_hotkey"
 LUA_SOURCE = Path("/usr/share/rime-llm-translator/rime_llm_translator.lua")
 RIME_DIR = Path.home() / ".config/ibus/rime-llm"
 DEFAULT_LANGUAGES = "en:English,ja:Japanese"
+DEFAULT_AI_HOTKEY = "Control+Shift+Return"
 PATCH_KEY = "engine/filters/+"
 LEGACY_PATCH_KEY = "engine/filters/@before 0"
 PATCH_VALUE = "lua_filter@*rime_llm_translator"
@@ -53,7 +55,8 @@ def config_default():
                           "offline_enabled": "true", "source_language": "auto",
                           "timeout_seconds": "10", "max_tokens": "4096",
                           "offline_timeout_seconds": "15", "offline_idle_seconds": "60",
-                          "offline_revision": rime_mt.revision()}
+                          "offline_revision": rime_mt.revision(),
+                          "ai_hotkey": DEFAULT_AI_HOTKEY}
     return cfg
 
 def load_config():
@@ -64,10 +67,10 @@ def load_config():
     return cfg
 
 def save_config(cfg):
-    private_dir(CONFIG_DIR)
-    with CONFIG_PATH.open("w", encoding="utf-8") as fp:
-        cfg.write(fp)
-    CONFIG_PATH.chmod(0o600)
+    # Live shortcut readers must see either the old or the complete new config.
+    contents = StringIO()
+    cfg.write(contents)
+    atomically_write(CONFIG_PATH, contents.getvalue())
 
 def parse_languages(raw):
     result = {}
@@ -83,6 +86,38 @@ def parse_languages(raw):
     if not 1 <= len(result) <= 6:
         raise ValueError("Configure 1-6 target languages")
     return result
+
+def normalize_hotkey(raw):
+    parts = [part.strip() for part in raw.split("+")]
+    aliases = {"ctrl": "Control", "control": "Control", "shift": "Shift",
+               "alt": "Alt", "super": "Super"}
+    modifiers = [aliases.get(part.lower()) for part in parts[:-1]]
+    if (not modifiers or None in modifiers or len(set(modifiers)) != len(modifiers)
+            or not set(modifiers).intersection({"Control", "Alt", "Super"})):
+        raise ValueError("AI shortcut needs Control, Alt or Super; e.g. Control+Alt+j")
+    key = parts[-1].lower()
+    if key in ("enter", "return"):
+        key = "Return"
+    elif re.fullmatch(r"f(?:[1-9]|1[0-2])", key):
+        key = key.upper()
+    elif not (re.fullmatch(r"[a-z0-9]", key) or key == "space"):
+        raise ValueError("AI shortcut key must be a letter, digit, F1-F12, Return or space")
+    return "+".join([m for m in ("Control", "Alt", "Shift", "Super") if m in modifiers] + [key])
+
+
+def hotkey(binding=None):
+    cfg = load_config()
+    value = normalize_hotkey(binding if binding is not None else cfg["translation"]["ai_hotkey"])
+    if binding is not None:
+        if os.geteuid() == 0:
+            raise RuntimeError("Run hotkey as your normal Ubuntu user, without sudo")
+        cfg["translation"]["ai_hotkey"] = value
+        save_config(cfg)
+    print("AI shortcut:", value)
+    if binding is not None:
+        print("Effective immediately with the preview8 Lua plugin loaded; no service restart needed.")
+        print("After upgrading from preview7: run sync and log out/in once to load the new plugin.")
+
 
 def chat_url(base):
     base = base.rstrip("/")
@@ -450,6 +485,8 @@ def setup(args):
     cfg["provider"]["model"] = ask("Model", cfg["provider"]["model"])
     cfg["translation"]["languages"] = ask("Target languages", cfg["translation"]["languages"])
     parse_languages(cfg["translation"]["languages"])
+    cfg["translation"]["ai_hotkey"] = normalize_hotkey(ask("AI shortcut (e.g. Control+Alt+j)",
+                                                         cfg["translation"]["ai_hotkey"]))
     save_config(cfg)
     key = getpass.getpass("API key (blank = keep current): ").strip()
     if key:
@@ -491,6 +528,10 @@ def doctor():
         cfg = load_config()
         print("Provider:", cfg["provider"]["base_url"], cfg["provider"]["model"])
         print("Languages:", cfg["translation"]["languages"])
+        try:
+            print("AI shortcut:", normalize_hotkey(cfg["translation"]["ai_hotkey"]))
+        except ValueError as exc:
+            print("AI shortcut: invalid:", exc)
     subprocess.run(["systemctl", "--user", "is-active", "rime-llm-translator.service", "rime-llm-ai.service"],
                    check=False)
 
@@ -498,18 +539,23 @@ def main():
     ap = argparse.ArgumentParser(description="Rime offline MT and hotkey-only AI")
     ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "serve-ai",
                                         "doctor", "install-offline", "install-runtime", "repair-offline",
-                                        "download-models", "restore-native", "cleanup-legacy"],
+                                        "download-models", "restore-native", "cleanup-legacy", "hotkey"],
                     help="Action")
+    ap.add_argument("binding", nargs="?", help="AI shortcut for hotkey, e.g. Control+Alt+j")
     ap.add_argument("--apply", action="store_true", help="Delete the paths shown by cleanup-legacy")
     ap.add_argument("--pip-cache", action="store_true", help="Include shared ~/.cache/pip downloads")
     ap.add_argument("--argos-models", action="store_true", help="Include shared old Chinese/English/Japanese Argos models")
     args = ap.parse_args()
+    if args.binding is not None and args.command != "hotkey":
+        ap.error("A shortcut binding requires the hotkey command")
     if args.command != "cleanup-legacy" and (args.apply or args.pip_cache or args.argos_models):
         ap.error("Cleanup flags require cleanup-legacy")
     os.umask(0o077)
     try:
         if args.command == "setup":
             setup(args)
+        elif args.command == "hotkey":
+            hotkey(args.binding)
         elif args.command == "sync":
             sync()
         elif args.command == "enable":

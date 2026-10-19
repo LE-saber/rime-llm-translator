@@ -1,4 +1,4 @@
--- Only Control+Shift+Return dispatches a DeepSeek request.
+-- Only the configured shortcut dispatches a cloud AI request.
 -- A nonmatching key is never consumed. The active candidate is not committed.
 local home = os.getenv("HOME") or ""
 local function config()
@@ -27,7 +27,7 @@ local function id_for(text,langs,o)
   end
   return string.format("%08x%08x",a,b)
 end
-local function dispatch(env)
+local function dispatch(env,o)
   local ctx=env.engine.context
   if not ctx:is_composing() or not ctx:has_menu() then return false end
   local candidate=ctx:get_selected_candidate()
@@ -37,7 +37,6 @@ local function dispatch(env)
   end
   local text=candidate.text
   if #text > 1200 then return false end
-  local o=config()
   if (o["translation.enabled"] or "false"):lower() ~= "true" then return false end
   local langs=o["translation.languages"] or "en:English,ja:Japanese"
   local id=id_for(text,langs,o)
@@ -62,6 +61,21 @@ local function dispatch(env)
   return ok and true or false
 end
 
+local function matching_config(key)
+  local o=config()
+  local shortcut=KeyEvent(o["translation.ai_hotkey"] or "Control+Shift+Return")
+  -- Require an explicit modifier, never intercept ordinary Chinese typing.
+  if not (shortcut:ctrl() or shortcut:alt() or shortcut:super()) then return nil end
+  local function letter(code)
+    if code >= 65 and code <= 90 then return code+32 end
+    return code
+  end
+  if letter(key.keycode) ~= letter(shortcut.keycode) then return nil end
+  if key:ctrl() ~= shortcut:ctrl() or key:shift() ~= shortcut:shift()
+      or key:alt() ~= shortcut:alt() or key:super() ~= shortcut:super() then return nil end
+  return o
+end
+
 return function(key, env)
   if not key then return 2 end
   -- Private in-process refresh from our IBus frontend's GLib main loop.
@@ -73,13 +87,14 @@ return function(key, env)
     end)
     return 1
   end
-  -- Test modifiers independently; Rime may render Control+Shift or Shift+Control.
-  if not (key:ctrl() and key:shift() and not key:alt() and not key:super() and not key:release()
-      and key.keycode == 0xff0d) then return 2 end
+  if key:release() or not (key:ctrl() or key:alt() or key:super()) then return 2 end
+  -- Invalid config or an unreadable file must never swallow input or dispatch AI.
+  local matched,o=pcall(matching_config,key)
+  if not matched or not o then return 2 end
   if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
     io.stderr:write("Rime AI hotkey matched; dispatching\n")
   end
-  local ok, consumed=pcall(dispatch,env)
+  local ok, consumed=pcall(dispatch,env,o)
   if os.getenv("RIME_LLM_TEST_DIAGNOSTICS") == "1" then
     io.stderr:write("Rime AI hotkey result: "..tostring(ok)..", "..tostring(consumed).."\n")
   end

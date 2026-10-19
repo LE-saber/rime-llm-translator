@@ -16,7 +16,7 @@
       <icon>/usr/share/ibus-rime/icons/rime.png</icon>
       <layout>default</layout>
       <longname>Rime Translator</longname>
-      <description>朙月拼音 · 离线翻译 · Ctrl+Shift+Enter AI 修正</description>
+      <description>朙月拼音 · 离线翻译 · 可配置快捷键 AI 修正</description>
       <rank>0</rank>
       <symbol>译</symbol>
     </engine>

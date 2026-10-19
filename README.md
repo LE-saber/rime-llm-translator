@@ -1,21 +1,34 @@
 # Rime LLM Translator — lightweight offline MT + explicit AI
 
-Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview7` replaces Argos/PyTorch with native CPU-only Bergamot and bundled Mozilla INT8 models. No pip, compilation or first-run model download on the user's machine.
+Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview8` uses native CPU-only Bergamot and bundled Mozilla INT8 models, with configurable AI shortcuts. No pip, compilation or first-run model download on the user's machine.
 
-Normal typing produces offline English/Japanese drafts. **Ctrl+Shift+Enter** explicitly sends the original Chinese and available drafts to the configured DeepSeek / OpenAI-compatible API for revision. An API key is optional. MT never uploads input or automatically falls back to cloud AI.
+Normal typing produces offline English/Japanese drafts. The AI shortcut (default **Ctrl+Shift+Enter**) explicitly sends the original Chinese and available drafts to the configured DeepSeek / OpenAI-compatible API for revision. An API key is optional. MT never uploads input or automatically falls back to cloud AI.
 
 ## Install
 
 Download a successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview7_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview8_amd64.deb
 rime-llm-translator setup && rime-llm-translator enable
 ```
 
 Existing users run `sync && enable` instead of `setup` to retain provider settings and keys. `install-offline` now verifies bundled resources. Except apt, run commands as the desktop user.
 
 Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources. Stock Rime remains available. The new engine uses `~/.config/ibus/rime-llm` and refreshes late results through IBus without another key or OS key injection.
+
+## Change the AI shortcut
+
+```bash
+rime-llm-translator hotkey 'Control+Alt+j'
+rime-llm-translator hotkey
+```
+
+Choose a combination unused by your desktop, applications and VM host. The command only changes `[translation] ai_hotkey` in `~/.config/rime-llm-translator/config.ini`, retaining provider settings, API key and dictionaries. `setup` also asks for the shortcut; `doctor` displays it. Changes take effect immediately after the preview8 plugin is loaded. When upgrading, run `sync && enable` and log out/in once first.
+
+Use one or more of `Control` (`Ctrl`), `Alt`, `Shift`, `Super`, followed by a letter, digit, `F1`–`F12`, `Return` (`Enter`) or `space`. At least one of Control/Alt/Super is required. Example: `Control+Shift+F8`. The old shortcut stops requesting AI after a change. A desktop or VM host shortcut may intercept keys before they reach Rime; this tool cannot detect all such conflicts.
+
+Use the shortcut while a Chinese candidate is selected and the composition remains open. It is handled inside Rime Translator, not registered as a global desktop shortcut. Ordinary Traditional Chinese input remains available.
 
 ## Behavior and resources
 

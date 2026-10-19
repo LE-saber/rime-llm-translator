@@ -23,6 +23,7 @@ for folder in (cache / "results-mt", cache / "results-ai", rime / "lua", config.
 config.write_text("[provider]\nbase_url=https://api.deepseek.com\nmodel=deepseek-chat\n"
                   "[translation]\nenabled=true\nlanguages=en:English,ja:Japanese\n"
                   "min_characters=1\nsource_language=auto\n", encoding="utf-8")
+subprocess.run(["rime-llm-translator", "hotkey", "Control+Shift+Return"], check=True)
 import shutil
 for name in ("rime_llm_translator.lua", "rime_llm_ai_hotkey.lua"):
     shutil.copyfile("/usr/share/rime-llm-translator/" + name, rime / "lua" / name)
@@ -98,7 +99,14 @@ try:
     # Preserve a native candidate highlighted after the translated alternatives.
     context.process_key_event(0xff54, 0, 0)  # Down, highlight an MT result.
     context.process_key_event(0xff52, 0, 0)  # Up, return to native first candidate.
-    assert context.process_key_event(0xff0d, 0, 5), "AI hotkey was not handled"
+    # Change the binding through the packaged CLI without restarting the engine.
+    subprocess.run(["rime-llm-translator", "hotkey", "Control+Alt+j"], check=True)
+    context.process_key_event(0xff0d, 0, 5)  # Old Control+Shift+Return.
+    context.process_key_event(ord("j"), 0, 8)  # Missing Control.
+    context.process_key_event(ord("J"), 0, 13)  # Extra Shift.
+    context.process_key_event(ord("j"), 0, 12 | (1 << 30))  # Key release.
+    assert not (cache / "ai.req").exists(), "old or nonmatching shortcut dispatched AI"
+    assert context.process_key_event(ord("j"), 0, 12 | 2), "custom AI hotkey with CapsLock was not handled"
     wait_for(lambda: (cache / "ai.req").is_file(), "explicit AI request")
     assert (cache / "ai.req").read_text().splitlines()[0] == rid
     write_result("ai", rid, "AI hello")
@@ -130,6 +138,23 @@ try:
     assert len(commits) == before and not forwarded
     # Ordinary MT must not generate another AI request.
     assert (cache / "ai.req").read_text().splitlines()[0] == rid
+    context.reset()
+    # Traditional Chinese remains intact; shifted letter keysyms also match.
+    for letter in "xiexie":
+        context.process_key_event(ord(letter), 0, 0)
+    wait_for(lambda: tables and tables[-1] and tables[-1][0].startswith("謝謝"),
+             "Traditional Chinese still works after changing the shortcut")
+    (cache / "ai.req").unlink()
+    config.write_text(config.read_text().replace("ai_hotkey = Control+Alt+j", "ai_hotkey = invalid"))
+    context.process_key_event(ord("j"), 0, 12)
+    assert not (cache / "ai.req").exists(), "invalid config dispatched AI"
+    subprocess.run(["rime-llm-translator", "hotkey", "Control+Shift+j"], check=True)
+    assert context.process_key_event(ord("J"), 0, 5), "shifted letter shortcut was not handled"
+    wait_for(lambda: (cache / "ai.req").is_file(), "new shortcut dispatches for Traditional Chinese")
+    request_text = bytes.fromhex((cache / "ai.req").read_text().splitlines()[1]).decode()
+    assert request_text.startswith("謝謝"), "AI did not retain Traditional Chinese source"
+    assert len(commits) == before and not forwarded
+    print("PASS: live shortcut changes, exact modifiers, invalid config and Traditional Chinese", flush=True)
     context.reset()
 finally:
     if worker:

@@ -1,15 +1,15 @@
 # Rime LLM Translator — 轻量离线机翻 + 按键 AI 修正
 
-目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview7` 使用原生 Bergamot INT8，替换 Argos/PyTorch。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
+目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview8` 使用原生 Bergamot INT8，并支持自定义 AI 快捷键。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
 
-普通输入提供 `🌐 MT · EN/JA` 草稿；仅 **Ctrl+Shift+Enter** 请求配置的 DeepSeek / OpenAI 兼容 API 修正。AI 读取中文原文和已有草稿，结果标为 `✦ AI · EN/JA` 并优先显示。API Key 可留空。
+普通输入提供 `🌐 MT · EN/JA` 草稿；仅 AI 快捷键（默认 **Ctrl+Shift+Enter**）请求配置的 DeepSeek / OpenAI 兼容 API 修正。AI 读取中文原文和已有草稿，结果标为 `✦ AI · EN/JA` 并优先显示。API Key 可留空。
 
 ## 安装与升级
 
 下载最新成功的 [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，解压后：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview7_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview8_amd64.deb
 ```
 
 新用户运行：
@@ -30,6 +30,21 @@ rime-llm-translator install-offline
 除 APT 外，命令均以桌面普通用户运行。**注销再登录**，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator** 并切换过去，必要时 Ctrl+反引号选择朙月拼音。
 
 独立前端通过 GLib/IBus 主循环更新迟到的翻译候选，不需额外按键，不向系统注入按键。原生 Rime 入口保留；新入口数据在 `~/.config/ibus/rime-llm`，不会复制或同时打开原生词频数据库。
+
+## 修改 AI 快捷键
+
+以普通用户运行，例：改为 Ctrl+Alt+J：
+
+```bash
+rime-llm-translator hotkey 'Control+Alt+j'
+rime-llm-translator hotkey
+```
+
+第一条修改，第二条查看。只更新配置中的 `ai_hotkey`，保留接口、模型、API Key 和词库；`setup` 也会询问快捷键，`doctor` 会显示当前值。
+
+从 preview7 升级后，先运行 `sync && enable` 并注销重新登录一次以加载新版 Lua。此后改键立即生效，不必重启服务或重新部署，原快捷键不再触发 AI。使用时保持候选未上屏，选中中文候选后按新组合键；繁体中文输入照常保留。
+
+格式：`Control`（也可写 `Ctrl`）、`Alt`、`Shift`、`Super` 的组合加一个字母、数字、`F1`–`F12`、`Return`（也可写 `Enter`）或 `space`。必须包含 Control/Alt/Super 中至少一个。例如 `Control+Shift+F8`。请选择桌面、应用和虚拟机宿主未占用的组合；程序不能自动检测全部冲突。这是输入法内快捷键，无需在 Ubuntu 的全局快捷键设置中注册。
 
 ## 旧版本残留
 
@@ -68,6 +83,7 @@ model = deepseek-chat
 enabled = true
 offline_enabled = true
 languages = en:English,ja:Japanese
+ai_hotkey = Control+Shift+Return
 source_language = auto
 min_characters = 1
 debounce_ms = 450

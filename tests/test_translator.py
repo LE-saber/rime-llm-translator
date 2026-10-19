@@ -116,6 +116,47 @@ class TranslatorTests(unittest.TestCase):
         self.assertEqual(list(tr.parse_languages(tr.DEFAULT_LANGUAGES)),
                          ["en", "ja"])
 
+    def test_hotkey_normalization_and_legacy_default(self):
+        self.assertEqual(tr.config_default()["translation"]["ai_hotkey"], "Control+Shift+Return")
+        for raw, expected in (("Ctrl+Alt+J", "Control+Alt+j"),
+                              ("shift + ctrl + enter", "Control+Shift+Return"),
+                              ("Super+f8", "Super+F8"), ("Alt+space", "Alt+space")):
+            with self.subTest(raw=raw):
+                self.assertEqual(tr.normalize_hotkey(raw), expected)
+
+    def test_reject_unsafe_or_invalid_hotkeys(self):
+        for raw in ("", "j", "Shift+j", "Control", "Control+", "Ctrl+Control+j",
+                    "Control+Alt+F13", "Release+Control+j", "Control+Shift+Foo",
+                    "Control+Alt+j+q", "Control+Alt+\n"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                tr.normalize_hotkey(raw)
+
+    def test_hotkey_command_preserves_configuration_and_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = tr.config_default()
+            cfg["provider"]["model"] = "my-existing-model"
+            cfg["translation"]["languages"] = "en:English"
+            with patch.object(tr, "CONFIG_DIR", root), \
+                    patch.object(tr, "CONFIG_PATH", root / "config.ini"), \
+                    patch.object(tr.os, "geteuid", return_value=1000, create=True), \
+                    patch("sys.stdout", new_callable=io.StringIO) as output:
+                tr.save_config(cfg)
+                key = root / "api_key"
+                key.write_text("fake-secret")
+                tr.hotkey("Ctrl+Alt+j")
+                saved = tr.load_config()
+                self.assertEqual(saved["translation"]["ai_hotkey"], "Control+Alt+j")
+                self.assertEqual(saved["provider"]["model"], "my-existing-model")
+                self.assertEqual(saved["translation"]["languages"], "en:English")
+                self.assertEqual(key.read_text(), "fake-secret")
+                before = tr.CONFIG_PATH.read_bytes()
+                tr.hotkey()
+                self.assertIn("AI shortcut: Control+Alt+j", output.getvalue())
+                with self.assertRaises(ValueError):
+                    tr.hotkey("j")
+                self.assertEqual(tr.CONFIG_PATH.read_bytes(), before)
+
     def test_custom_languages(self):
         self.assertEqual(tr.parse_languages("en:English,fr:French,ko:Korean")["fr"],
                          "French")
