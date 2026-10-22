@@ -179,6 +179,8 @@ class EditorWindow(Gtk.ApplicationWindow):
         window, dialog, notebook, notebook header {background: BG; color: FG;}
         textview, textview text, entry, treeview {background: SF; color: FG;}
         button, combobox button {background: SF; color: FG; border-color: BD; box-shadow: none;}
+        checkbutton check:checked {background: AC; color: SF; border-color: AC;}
+        notebook tab:checked {background: SF; border-color: AC;} *:focus {outline-color: AC;}
         label, checkbutton {color: FG;} selection {background: AC; color: SF;}
         .source {font-size: 17px;} .preview {font-size: 12px;}
         .send {background: AC; color: SF;} scrolledwindow {border: 1px solid BD;}
@@ -201,8 +203,7 @@ class EditorWindow(Gtk.ApplicationWindow):
             self.show_message("正在等待原输入框，完成或取消后再打开")
             return
         self.token = token
-        self.cfg = core.load_config()
-        self.languages.set_active_id(self.cfg["panel"]["preferred_language"])
+        self.refresh_config()
         try:
             raw = (core.CACHE_DIR / "panel-open").read_text(encoding="utf-8").split("\n", 1)
             if raw[0] == token and len(raw) == 2 and raw[1]:
@@ -453,8 +454,22 @@ class Settings(Gtk.Dialog):
         self.get_content_area().pack_start(self.notebook, True, True, 0)
         self.entries, self.checks, self.bindings = {}, {}, {}
         translation = self.page("翻译")
-        self.entry(translation, "目标语言（代码:英文名称）", "languages", self.cfg["translation"]["languages"])
-        self.entry(translation, "优先预览语言代码", "preferred_language", self.cfg["panel"]["preferred_language"])
+        translation.pack_start(Gtk.Label(label="目标语言", xalign=0), False, False, 0)
+        configured = core.parse_languages(self.cfg["translation"]["languages"])
+        self.language_names = {"en": "English", "ja": "Japanese", "fr": "French", "ko": "Korean"}
+        self.language_names.update(configured)
+        self.language_checks = {}
+        for code, label in self.language_names.items():
+            check = Gtk.CheckButton(label=label + (" · 离线 / AI" if code in ("en", "ja") else " · 仅 AI"))
+            check.set_active(code in configured)
+            self.language_checks[code] = check
+            check.connect("toggled", self.language_toggled)
+            translation.pack_start(check, False, False, 0)
+        translation.pack_start(Gtk.Label(label="优先预览语言", xalign=0), False, False, 0)
+        self.preferred = Gtk.ComboBoxText()
+        translation.pack_start(self.preferred, False, False, 0)
+        self.language_toggled()
+        self.preferred.set_active_id(self.cfg["panel"]["preferred_language"])
         self.check(translation, "发送自动 AI 翻译（只在发送时触发，不会随打字调用 AI）", "auto_ai_send")
         translation.pack_start(Gtk.Label(label="机翻实时预览：英语、日语。其他语言仅手动 AI；失败保留原文。", wrap=True, xalign=0), False, False, 0)
         provider = self.page("API / 模型")
@@ -501,6 +516,18 @@ class Settings(Gtk.Dialog):
         self.notebook.append_page(box, Gtk.Label(label=title))
         return box
 
+    def language_toggled(self, *_):
+        if not hasattr(self, "preferred"):
+            return
+        previous = self.preferred.get_active_id()
+        self.preferred.remove_all()
+        for code, check in self.language_checks.items():
+            if check.get_active():
+                self.preferred.append(code, self.language_names[code])
+        self.preferred.set_active_id(previous or "en")
+        if not self.preferred.get_active_id():
+            self.preferred.set_active(0)
+
     def entry(self, page, label, key, value, secret=False):
         page.pack_start(Gtk.Label(label=label, xalign=0), False, False, 0)
         entry = Gtk.Entry(text=value, visibility=not secret)
@@ -538,14 +565,16 @@ class Settings(Gtk.Dialog):
             try:
                 cfg = core.load_config()  # preserve CLI/unknown settings edited meanwhile
                 value = lambda name: self.entries[name].get_text().strip()
-                languages = core.parse_languages(value("languages"))
+                languages_raw = ",".join(code + ":" + self.language_names[code]
+                                         for code, check in self.language_checks.items() if check.get_active())
+                languages = core.parse_languages(languages_raw)
                 core.chat_url(value("base_url"))
                 if not value("model"):
                     raise ValueError("模型名称不能为空")
                 timeout = float(value("timeout_seconds"))
                 if not 2 <= timeout <= 60:
                     raise ValueError("超时应为 2–60 秒")
-                if value("preferred_language") not in languages:
+                if self.preferred.get_active_id() not in languages:
                     raise ValueError("优先语言必须包含在目标语言中")
                 validate_shortcuts(self.bindings)
                 # Opening must work from an IBus keyboard event, without global hooks.
@@ -555,12 +584,12 @@ class Settings(Gtk.Dialog):
                     binding = self.bindings[name]
                     if binding not in ("DoubleAlt", "TripleAlt") and "Button" not in binding:
                         core.normalize_hotkey(binding)
-                cfg["translation"]["languages"] = value("languages")
+                cfg["translation"]["languages"] = languages_raw
                 cfg["translation"]["timeout_seconds"] = value("timeout_seconds")
                 cfg["translation"]["ai_hotkey"] = self.bindings["ai"]
                 cfg["panel"]["open_hotkey"] = self.bindings["open"]
                 cfg["panel"]["send_hotkey"] = self.bindings["send"]
-                cfg["panel"]["preferred_language"] = value("preferred_language")
+                cfg["panel"]["preferred_language"] = self.preferred.get_active_id()
                 cfg["panel"]["theme"] = "dark" if self.dark.get_active() else "light"
                 for key in ("auto_ai_send", "history_enabled"):
                     cfg["panel"][key] = str(self.checks[key].get_active()).lower()

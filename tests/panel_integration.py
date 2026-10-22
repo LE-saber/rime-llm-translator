@@ -53,7 +53,7 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 cfg = core.config_default()
 cfg["provider"]["base_url"] = "http://127.0.0.1:" + str(server.server_port)
 cfg["translation"]["ai_hotkey"] = "DoubleAlt"
-cfg["panel"]["open_hotkey"] = "Control+Alt+space"
+cfg["panel"]["open_hotkey"] = "Control+Alt+F9"
 core.save_config(cfg)
 core.atomically_write(core.KEY_PATH, "local-test-only")
 os.environ["IBUS_ADDRESS"] = "unix:path=" + str(home / "ibus.sock")
@@ -103,7 +103,8 @@ try:
     focus(target)
     for key in "xiexie":
         target.process_key_event(ord(key), 0, 0)
-    assert target.process_key_event(32, 0, 12), "open chord not handled"
+    print("Bridge before open:", gui.call_bridge("Focus"), flush=True)
+    assert target.process_key_event(0xffc6, 0, 12), "open chord not handled"
     wait(lambda: app.window is not None and app.window.token, "native GTK editor opened by IBus chord")
     editor = app.window
     assert editor.text().startswith("謝謝"), editor.text()

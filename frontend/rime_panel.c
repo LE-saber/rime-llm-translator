@@ -155,6 +155,13 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
                    const gchar* iface, const gchar* name, GVariant* args,
                    GDBusMethodInvocation* invocation, gpointer unused) {
   const gchar *supplied, *text;
+  if (!strcmp(name, "Focus")) {
+    gchar* info = g_strdup_printf("focused=%d client=%s id=%s", focused != NULL,
+                                 focus_client ? focus_client : "none", focus_id ? focus_id : "none");
+    g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", info));
+    g_free(info);
+    return;
+  }
   if (!strcmp(name, "Open")) {
     if (focused) rime_panel_open(focused);
     g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", token ? token : ""));
@@ -181,6 +188,7 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
 
 void rime_panel_init(void) {
   const gchar* xml = "<node><interface name='" BRIDGE "'>"
+    "<method name='Focus'><arg type='s' direction='out'/></method>"
     "<method name='Open'><arg type='s' direction='out'/></method>"
     "<method name='State'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Cancel'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"

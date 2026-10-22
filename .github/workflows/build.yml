@@ -87,6 +87,8 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
           timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
       - name: Native GTK long-text and target isolation
+        env:
+          RIME_LLM_TEST_DIAGNOSTICS: 1
         run: |
           export HOME="$RUNNER_TEMP/panel-home"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/panel-runtime"
