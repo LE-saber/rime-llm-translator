@@ -104,6 +104,9 @@ try:
     # The editor intentionally uses Xwayland utility hints to avoid taskbar and
     # Alt-Tab entries. Get the nested shell's own X server, not outer Xvfb.
     os.environ["DISPLAY"] = shell("global.rimeTestGLib.getenv('DISPLAY')")
+    authority = shell("global.rimeTestGLib.getenv('XAUTHORITY')")
+    if authority:
+        os.environ["XAUTHORITY"] = authority
     os.environ["WAYLAND_DISPLAY"] = display
     sys.path.insert(0, "/usr/share/rime-llm-translator")
     import rime_gui as gui
