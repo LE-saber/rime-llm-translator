@@ -64,7 +64,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Maintainer: LE-saber <noreply@github.com>
-Depends: python3 (>= 3.11), python3-yaml, python3-gi, gir1.2-gtk-3.0, gir1.2-ibus-1.0, ibus-gtk3, ibus-rime, librime-plugin-lua, rime-data-luna-pinyin, rime-prelude, rime-data-stroke, libibus-1.0-5, librime1 (>= 1.10.0), libnotify4, libglib2.0-0t64, libc6 (>= 2.38), libstdc++6, libopencc1.1
+Depends: python3 (>= 3.11), python3-yaml, python3-gi, gir1.2-gtk-3.0, gir1.2-ibus-1.0, ibus-gtk3, ibus-rime, librime-plugin-lua, rime-data-luna-pinyin, rime-prelude, rime-essay, rime-data-stroke, libibus-1.0-5, librime1 (>= 1.10.0), libnotify4, libglib2.0-0t64, libc6 (>= 2.38), libstdc++6, libopencc1.1
 Description: Offline machine translation and optional AI candidates for IBus Rime
  CPU-only native Bergamot with bundled Chinese-English-Japanese INT8 models.
  No pip installation or first-run model downloads. Optional manual AI correction.
