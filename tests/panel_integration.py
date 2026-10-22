@@ -220,6 +220,7 @@ try:
     assert core.CONFIG_PATH.stat().st_mode & 0o077 == 0
     if core.load_config()["panel"]["theme"] != "dark":
         editor.toggle_theme()
+    wait(lambda: "mt" in editor.draft.results, "night theme keeps the offline preview usable")
     pump()
     screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
     screenshot.savev("dist/native-dark.png", "png", [], [])

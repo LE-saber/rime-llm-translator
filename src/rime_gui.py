@@ -178,11 +178,13 @@ class EditorWindow(Gtk.ApplicationWindow):
             ("#282a36", "#343746", "#f2f2f2", "#505362", "#bd93f9") if dark else
             ("#f1f1f1", "#ffffff", "#252525", "#cdcdcd", "#525252"))
         css = """
+        * {font-family: "Noto Sans CJK SC", "Noto Sans CJK TC", sans-serif;}
         window, dialog, notebook, notebook header {background: BG; color: FG;}
         textview, textview text, entry, treeview {background: SF; color: FG;}
         button, combobox button {background: SF; color: FG; border-color: BD; box-shadow: none;}
         checkbutton check:checked {background: AC; color: SF; border-color: AC;}
         notebook tab:checked {background: SF; border-color: AC;} *:focus {outline-color: AC;}
+        notebook header tabs tab:checked {box-shadow: none; border-bottom: 2px solid AC;}
         label, checkbutton {color: FG;} selection {background: AC; color: SF;}
         .source {font-size: 17px;} .preview {font-size: 12px;}
         .send {background: AC; color: SF;} scrolledwindow {border: 1px solid BD;}
