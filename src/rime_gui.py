@@ -441,6 +441,9 @@ class EditorWindow(Gtk.ApplicationWindow):
         if not self.text().strip():
             self.show_message("请先输入原文，或按 ↑ 找回最近记录")
             return
+        if len(self.text().encode()) > MAX_BYTES:
+            self.show_message("原文超过 32 KiB，请缩短或分次发送；不会截断发送")
+            return
         if self.send_mode is not None:
             return  # The button and recorded send shortcut share one intent.
         if not self.token:
@@ -519,9 +522,12 @@ class EditorWindow(Gtk.ApplicationWindow):
             if state not in ("editing", "sent"):
                 self.target_expired()
             elif state == "editing":
-                target = call_bridge("Target", "(s)", (self.token,))
-                self.target_label.set_text("发送到：" + target)
-                self.target_label.set_tooltip_text("最近选择的真实输入位置 · " + target + "；悬浮编辑区不会成为发送目标")
+                try:
+                    target = call_bridge("Target", "(s)", (self.token,))
+                    self.target_label.set_text("发送到：" + target)
+                    self.target_label.set_tooltip_text("最近选择的真实输入位置 · " + target + "；悬浮编辑区不会成为发送目标")
+                except GLib.Error:
+                    self.target_expired()
         for mode in ("mt", "ai"):
             job = self.draft.jobs.get(mode)
             if not job or job.get("done"):

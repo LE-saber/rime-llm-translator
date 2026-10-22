@@ -6,7 +6,7 @@
 
 ## 安装与升级
 
-preview12 新增原生长文本面板、GUI 设置、输入记录和发送时 AI 策略。详见 [长文本使用与验收](docs/LONG_TEXT.md)，含直接发送支持范围：无系统标题栏的置顶悬浮面板，随包 GNOME 46 桥接扩展负责恢复原输入框并发送。升级后运行 sync / enable 并注销再登录。
+preview12 统一悬浮面板的图标、间距与主题；每次打开为空白，未发送文本可从记录找回，发送成功即清空。配置 API 后默认启用发送 AI，等待时显示转圈和秒数，可手动关闭。发送位置跟随最近选择的真实输入框，悬浮原文区和设置框都不会成为接收目标。详见 [长文本使用与验收](docs/LONG_TEXT.md)。升级后运行 sync / enable 并注销再登录。
 
 下载最新成功的 [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，解压后：
 

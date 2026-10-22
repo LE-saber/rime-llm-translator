@@ -6,7 +6,7 @@ Normal typing produces offline English/Japanese drafts. The AI shortcut (default
 
 ## Install
 
-preview12 adds an on-demand GTK3 long-text editor, GUI settings, private history, and optional AI-on-send. See [long-text behavior and acceptance](docs/LONG_TEXT.md). The editor is an undecorated, resizable floating panel. A bundled GNOME 46 extension restores the original target and commits translations safely on Wayland; run sync + enable and log out/in after upgrading.
+preview12 improves the native floating editor with icon controls, fresh empty drafts, unsent history recall, and a spinner with elapsed seconds during AI send. AI-on-send defaults on once the provider is configured and can be disabled. The destination follows the latest real text field selected while the panel is open; editing or focusing settings inside the panel never replaces it. A bundled GNOME 46 bridge restores and verifies that destination on Wayland. See [long-text behavior and acceptance](docs/LONG_TEXT.md). Run sync + enable and log out/in after upgrading.
 
 Download a successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
