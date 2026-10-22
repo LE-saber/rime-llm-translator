@@ -163,12 +163,14 @@ class EditorWindow(Gtk.ApplicationWindow):
     def show_message(self, text):
         self.message.set_text(text)
 
-    def refresh_config(self):
+    def refresh_config(self, reset_language=False):
         self.cfg = core.load_config()
+        selected = None if reset_language else self.languages.get_active_id()
+        self.refreshing = True
         self.languages.remove_all()
         for code, label in core.parse_languages(self.cfg["translation"]["languages"]).items():
             self.languages.append(code, label)
-        self.languages.set_active_id(self.cfg["panel"]["preferred_language"])
+        self.languages.set_active_id(selected or self.cfg["panel"]["preferred_language"])
         if not self.languages.get_active_id():
             self.languages.set_active(0)
         dark = self.cfg["panel"]["theme"] == "dark"
@@ -197,13 +199,14 @@ class EditorWindow(Gtk.ApplicationWindow):
         for name, button in self.buttons.items():
             button.set_no_show_all(name not in enabled)
             button.set_visible(name in enabled)
+        self.refreshing = False
 
     def open(self, token):
         if self.queued:
             self.show_message("正在等待原输入框，完成或取消后再打开")
             return
         self.token = token
-        self.refresh_config()
+        self.refresh_config(reset_language=True)
         try:
             raw = (core.CACHE_DIR / "panel-open").read_text(encoding="utf-8").split("\n", 1)
             if raw[0] == token and len(raw) == 2 and raw[1]:
@@ -228,7 +231,7 @@ class EditorWindow(Gtk.ApplicationWindow):
             self.send_button.set_sensitive(True)
 
     def changed(self, *_):
-        if not hasattr(self, "languages"):
+        if not hasattr(self, "languages") or getattr(self, "refreshing", False):
             return
         self.draft.edit(self.text(), self.languages.get_active_id() or "en")
         self.send_mode = None
@@ -600,7 +603,7 @@ class Settings(Gtk.Dialog):
                 if value("key"):
                     core.atomically_write(core.KEY_PATH, value("key") + "\n")
                 core.save_config(cfg)
-                self.editor.refresh_config()
+                self.editor.refresh_config(reset_language=True)
                 self.editor.changed()
                 self.editor.show_message("已保存；普通输入法无需重启。若 Alt+Space 被桌面占用，请重新录制打开键")
                 break

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, "/usr/share/rime-llm-translator")
@@ -121,14 +122,33 @@ try:
     wait(lambda: "你好" in editor.text(), "Rime selections accumulate in editable GTK text buffer")
     assert target_commits == []
     assert not core.AI_REQUEST.exists(), "editor candidate requested AI"
+    recorder = gui.Recorder(editor)
+    def event(key, state=0):
+        return SimpleNamespace(keyval=key, state=state)
+    recorder.do_key_press_event(event(Gdk.KEY_Alt_L, 4))
+    recorder.do_key_press_event(event(Gdk.KEY_space, 12))
+    assert recorder.value == "Control+Alt+space", recorder.value
+    for _ in range(2):
+        recorder.do_key_press_event(event(Gdk.KEY_Alt_L))
+        recorder.do_key_release_event(event(Gdk.KEY_Alt_L, 8))
+    assert recorder.value == "DoubleAlt", recorder.value
+    recorder.mouse(recorder, SimpleNamespace(button=8, state=4))
+    assert recorder.value == "Control+Button8"
+    recorder.destroy()
+    print("PASS: native keyboard and side-button recording", flush=True)
     workers = [subprocess.Popen(["rime-llm-translator", mode]) for mode in ("serve", "serve-ai")]
     editor.buffer.set_text("你好，谢谢。\n我们明天见。")
     wait(lambda: "mt" in editor.draft.results, "real packaged MT translates multiline draft", 55)
     assert "\n" in editor.draft.results["mt"]
     assert cloud["calls"] == 0, "typing requested cloud"
+    screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
+    screenshot.savev("dist/native-long-text.png", "png", [], [])
     editor.ai()
     wait(lambda: "ai" in editor.draft.results, "explicit AI uses real HTTP code with local mock")
     calls = cloud["calls"]
+    ai_result = editor.draft.results["ai"]
+    editor.toggle_theme()
+    assert editor.draft.results["ai"] == ai_result and cloud["calls"] == calls
     editor.buffer.insert_at_cursor("这是修改。")
     wait(lambda: "mt" in editor.draft.results, "editing resets to real MT")
     assert cloud["calls"] == calls and "ai" not in editor.draft.results
@@ -170,11 +190,19 @@ try:
     assert not editor.queued and editor.send_mode is None
     # GUI settings can save safely without replacing a blank API key.
     dialog = gui.Settings(editor)
+    dialog.show_all()
+    pump()
+    screenshot = Gdk.pixbuf_get_from_window(dialog.get_window(), 0, 0, *dialog.get_size())
+    screenshot.savev("dist/native-settings.png", "png", [], [])
     GLib.idle_add(lambda: (dialog.response(Gtk.ResponseType.OK), False)[1])
     dialog.run_and_save()
     assert core.KEY_PATH.read_text().strip() == "local-test-only"
     assert core.CONFIG_PATH.stat().st_mode & 0o077 == 0
-    editor.toggle_theme()
+    if core.load_config()["panel"]["theme"] != "dark":
+        editor.toggle_theme()
+    pump()
+    screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
+    screenshot.savev("dist/native-dark.png", "png", [], [])
     editor.remember()
     assert json.loads(gui.DATA_PATH.read_text())["history"]
     assert gui.DATA_PATH.stat().st_mode & 0o077 == 0

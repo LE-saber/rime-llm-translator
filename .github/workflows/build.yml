@@ -120,6 +120,7 @@ jobs:
             docs/LONG_TEXT.md
             dist/RESOURCE_REPORT.md
             dist/mt-benchmark.json
+            dist/native-*.png
           if-no-files-found: error
           retention-days: 30
       - name: Publish tagged release

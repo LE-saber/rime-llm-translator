@@ -334,6 +334,7 @@ ibus_rime_engine_enable (IBusEngine *engine)
 static void
 ibus_rime_engine_disable (IBusEngine *engine)
 {
+  rime_panel_blur(engine);
   IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
   rime_engine->focused = FALSE;
   g_clear_pointer(&rime_engine->cache_stamp, g_free);
