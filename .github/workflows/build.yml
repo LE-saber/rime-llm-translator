@@ -17,7 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install test dependencies
+        timeout-minutes: 8
         run: |
+          # The runner's Azure mirror can stall on desktop/Rime packages.
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
+          fi
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin rime-prelude rime-essay rime-data-stroke dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev gnome-shell xwayland libgl1-mesa-dri
       - uses: actions/cache@v4
