@@ -65,7 +65,7 @@ class Draft:
 
     def sent(self):
         # Sending never turns future edits into automatic cloud requests.
-        self.edit(self.source, self.language)
+        self.edit("", self.language)
 
 
 class History:

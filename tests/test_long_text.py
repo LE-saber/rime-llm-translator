@@ -45,7 +45,40 @@ class LongTextTests(unittest.TestCase):
         draft.accept("ai", {"id": job["id"], "text": "こんにちは"})
         self.assertEqual(draft.ready("ai"), "こんにちは")
         draft.sent()
+        self.assertEqual(draft.source, "")
         self.assertEqual(draft.begin_send(False), ("mt", None))
+
+    def test_auto_ai_configuration_migrates_once_and_retains_manual_off(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config.ini"
+            key = root / "api_key"
+            config.write_text("[panel]\nauto_ai_send = false\n", encoding="utf-8")
+            with patch.object(core, "CONFIG_PATH", config), patch.object(core, "KEY_PATH", key):
+                cfg = core.load_config()
+                self.assertTrue(cfg.getboolean("panel", "auto_ai_send"))
+                self.assertFalse(core.auto_ai_enabled(cfg))  # no configured API key
+                key.write_text("local-test-key", encoding="utf-8")
+                self.assertTrue(core.auto_ai_enabled(cfg))
+                cfg["panel"]["auto_ai_send"] = "false"
+                core.save_config(cfg)
+                self.assertFalse(core.auto_ai_enabled(core.load_config()))
+                self.assertEqual(core.load_config()["panel"]["preferences_revision"], "12")
+
+    def test_auto_ai_requires_valid_provider_and_nonempty_model(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / "key"
+            key.write_text("local-test-key", encoding="utf-8")
+            with patch.object(core, "KEY_PATH", key):
+                cfg = core.config_default()
+                self.assertTrue(core.auto_ai_enabled(cfg))
+                cfg["provider"]["model"] = ""
+                self.assertFalse(core.auto_ai_enabled(cfg))
+                cfg["provider"]["model"] = "some-model"
+                cfg["provider"]["base_url"] = "http://untrusted.example"
+                self.assertFalse(core.auto_ai_enabled(cfg))
 
     def test_language_change_and_same_text_new_revision_reject_old(self):
         draft = Draft()

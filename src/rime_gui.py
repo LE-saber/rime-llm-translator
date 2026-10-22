@@ -15,7 +15,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("IBus", "1.0")
-from gi.repository import Gdk, Gio, GLib, Gtk
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 
 import rime_llm_translator as core
 from rime_long_text import Draft, History, MAX_BYTES, validate_shortcuts
@@ -28,6 +28,9 @@ MODS = [(Gdk.ModifierType.CONTROL_MASK, "Control"),
 MODIFIER_KEYS = {"Alt_L", "Alt_R", "Control_L", "Control_R", "Shift_L", "Shift_R", "Super_L", "Super_R"}
 BUTTONS = {"copy": "复制", "paste": "粘贴", "symbols": "符号",
            "translate": "AI 翻译", "settings": "设置"}
+ICONS = {"copy": "edit-copy-symbolic", "paste": "edit-paste-symbolic",
+         "symbols": "face-smile-symbolic", "translate": "tools-check-spelling-symbolic",
+         "settings": "emblem-system-symbolic"}
 DATA_PATH = core.CONFIG_DIR / "long-text.json"
 
 
@@ -81,6 +84,8 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.token, self.queued, self.send_mode = None, False, None
         self.target_supported = True
         self.hidden_at, self.debounce = None, 0
+        self.busy_started = None
+        self.next_target_check = 0
         self.recalling = False
         self.taps = TapMatcher()
         try:
@@ -88,9 +93,11 @@ class EditorWindow(Gtk.ApplicationWindow):
         except (OSError, ValueError):
             data = {}
         self.history = History(data.get("history", []))
-        self.saved_text = data.get("draft", "")
-        if not isinstance(self.saved_text, str) or len(self.saved_text.encode()) > MAX_BYTES:
-            self.saved_text = ""
+        # Old versions restored a draft automatically. Preserve it as history,
+        # while every new opening now starts with an empty editor.
+        legacy_draft = data.get("draft", "")
+        if self.cfg.getboolean("panel", "history_enabled") and isinstance(legacy_draft, str):
+            self.history.add(legacy_draft)
         self.set_default_size(max(600, min(self.cfg.getint("panel", "width"), 1800)),
                               max(320, min(self.cfg.getint("panel", "height"), 1200)))
         self.set_size_request(600, 320)
@@ -102,24 +109,36 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.connect("delete-event", self.close_panel)
         self.connect("focus-out-event", lambda *_: self.taps.reset())
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=14)
+        self.get_style_context().add_class("editor")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin=16)
         self.add(box)
         heading = Gtk.Box(spacing=12)
         drag = Gtk.EventBox()
-        drag.add(Gtk.Label(label="长文本翻译 · 拖动移动", xalign=0))
+        title = Gtk.Label(label="长文本翻译", xalign=0)
+        title.get_style_context().add_class("panel-title")
+        drag.add(title)
+        drag.set_tooltip_text("拖动移动面板")
         drag.connect("button-press-event", self.move_panel)
         heading.pack_start(drag, True, True, 0)
-        close = Gtk.Button(label="×")
-        close.set_tooltip_text("收起面板，保留草稿")
+        close = self.icon_button("window-close-symbolic", "关闭并保存到输入记录")
         close.connect("clicked", self.close_panel)
         heading.pack_end(close, False, False, 0)
-        self.theme = Gtk.Button(label="日间 / 夜间")
+        self.theme = self.icon_button("weather-clear-night-symbolic", "切换日间 / 夜间")
         self.theme.connect("clicked", self.toggle_theme)
         heading.pack_end(self.theme, False, False, 0)
         box.pack_start(heading, False, False, 0)
+        self.target_label = Gtk.Label(label="从目标输入框打开后绑定发送位置", xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        self.target_label.get_style_context().add_class("muted")
+        box.pack_start(self.target_label, False, False, 0)
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        left.pack_start(Gtk.Label(label="原文 · 选词先累积，可直接修改", xalign=0), False, False, 0)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_end=6)
+        source_heading = Gtk.Box(spacing=8)
+        source_heading.set_size_request(-1, 26)
+        source_heading.pack_start(Gtk.Label(label="原文", xalign=0), True, True, 0)
+        self.counter = Gtk.Label(label="0 字")
+        self.counter.get_style_context().add_class("muted")
+        source_heading.pack_end(self.counter, False, False, 0)
+        left.pack_start(source_heading, False, False, 0)
         self.source = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=12,
                                    right_margin=12, top_margin=12, bottom_margin=12)
         self.source.get_style_context().add_class("source")
@@ -128,45 +147,82 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.source.connect("preedit-changed", self.preedit_changed)
         self.composing = False
         left.pack_start(self.scrolled(self.source), True, True, 0)
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_start=10)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_start=6)
+        preview_heading = Gtk.Box(spacing=8)
+        preview_heading.set_size_request(-1, 26)
+        preview_heading.pack_start(Gtk.Label(label="译文预览", xalign=0), True, True, 0)
+        self.preview_mode = Gtk.Label(label="机翻")
+        self.preview_mode.get_style_context().add_class("badge")
+        preview_heading.pack_end(self.preview_mode, False, False, 0)
+        right.pack_start(preview_heading, False, False, 0)
         self.languages = Gtk.ComboBoxText()
         self.languages.connect("changed", self.changed)
-        right.pack_start(self.languages, False, False, 0)
+        self.languages.set_tooltip_text("选择预览和发送语言")
         self.preview = Gtk.TextView(editable=False, cursor_visible=False,
                                    wrap_mode=Gtk.WrapMode.WORD_CHAR, left_margin=10,
                                    right_margin=10, top_margin=12, bottom_margin=10)
         self.preview.get_style_context().add_class("preview")
         right.pack_start(self.scrolled(self.preview), True, True, 0)
+        right.pack_start(self.languages, False, False, 0)
         self.paned.pack1(left, True, False)
         self.paned.pack2(right, False, False)
         self.paned.set_position(int(self.get_default_size()[0] * .73))
         box.pack_start(self.paned, True, True, 0)
-        toolbar = Gtk.Box(spacing=6)
+        toolbar = Gtk.Box(spacing=8)
         actions = {"copy": self.copy_source, "paste": self.paste, "symbols": self.symbols,
                    "translate": self.ai, "settings": self.settings}
         self.buttons = {}
         for name, label in BUTTONS.items():
-            button = Gtk.Button(label=label)
+            button = self.icon_button(ICONS[name], label, label if name == "translate" else None)
             button.connect("clicked", actions[name])
             toolbar.pack_start(button, False, False, 0)
             self.buttons[name] = button
-        self.send_button = Gtk.Button(label="发送译文")
+        self.auto_ai_toggle = Gtk.CheckButton(label="发送用 AI")
+        self.auto_ai_toggle.set_tooltip_text("配置 API 后默认生效；只在发送时调用 AI，实时预览仍用机翻")
+        self.auto_ai_toggle.connect("toggled", self.toggle_auto_ai)
+        toolbar.pack_start(self.auto_ai_toggle, False, False, 6)
+        self.send_button = Gtk.Button()
+        send_content = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        self.send_icon = Gtk.Image.new_from_icon_name("mail-send-symbolic", Gtk.IconSize.BUTTON)
+        self.send_spinner = Gtk.Spinner()
+        self.send_spinner.set_no_show_all(True)
+        self.send_label = Gtk.Label(label="发送译文")
+        send_content.pack_start(self.send_icon, False, False, 0)
+        send_content.pack_start(self.send_spinner, False, False, 0)
+        send_content.pack_start(self.send_label, False, False, 0)
+        self.send_button.add(send_content)
         self.send_button.get_style_context().add_class("send")
         self.send_button.connect("clicked", self.send)
         toolbar.pack_end(self.send_button, False, False, 0)
         box.pack_start(toolbar, False, False, 0)
-        self.message = Gtk.Label(label="实时预览使用机翻；AI 仅手动触发", xalign=0, wrap=True)
-        box.pack_start(self.message, False, False, 0)
+        footer = Gtk.Box(spacing=8)
+        self.message = Gtk.Label(label="输入原文开始预览 · 空白时按 ↑ 找回记录", xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        self.message.get_style_context().add_class("muted")
+        footer.pack_start(self.message, True, True, 0)
         grip = Gtk.EventBox(halign=Gtk.Align.END)
         grip.add(Gtk.Label(label="◢"))
         grip.set_tooltip_text("拖动调整大小")
         grip.connect("button-press-event", self.resize_panel)
-        box.pack_end(grip, False, False, 0)
+        footer.pack_end(grip, False, False, 0)
+        box.pack_end(footer, False, False, 0)
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.connect("button-press-event", self.mouse_shortcut)
         self.refresh_config()
-        self.buffer.set_text(self.saved_text)
+        self.changed()
+        self.persist_history()
         GLib.timeout_add(120, self.poll)
+
+    @staticmethod
+    def icon_button(icon, label, text=None):
+        button = Gtk.Button()
+        content = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
+        content.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.BUTTON), False, False, 0)
+        if text:
+            content.pack_start(Gtk.Label(label=text), False, False, 0)
+        button.add(content)
+        button.set_tooltip_text(label)
+        button.get_accessible().set_name(label)
+        return button
 
     def move_panel(self, _, event):
         if event.button == 1:
@@ -196,6 +252,41 @@ class EditorWindow(Gtk.ApplicationWindow):
 
     def show_message(self, text):
         self.message.set_text(text)
+        self.message.set_tooltip_text(text)
+
+    def update_send_state(self):
+        waiting_ai = self.busy_started is not None and self.send_mode == "ai"
+        self.send_spinner.set_visible(waiting_ai)
+        self.send_icon.set_visible(not waiting_ai)
+        if waiting_ai:
+            self.send_spinner.start()
+            self.send_label.set_text("AI 翻译 %.1f s" % (time.monotonic() - self.busy_started))
+        else:
+            self.send_spinner.stop()
+            auto_ai = self.cfg.getboolean("panel", "auto_ai_send") and self.ai_configured
+            self.send_label.set_text("AI 翻译并发送" if auto_ai else "发送译文")
+        self.send_button.set_sensitive(self.target_supported and not waiting_ai and not self.queued)
+
+    def toggle_auto_ai(self, *_):
+        if getattr(self, "refreshing", False):
+            return
+        cfg = core.load_config()
+        cfg["panel"]["auto_ai_send"] = str(self.auto_ai_toggle.get_active()).lower()
+        core.save_config(cfg)
+        self.cfg = cfg
+        self.changed()
+
+    def persist_history(self):
+        core.atomically_write(DATA_PATH, json.dumps({"history": self.history.entries}, ensure_ascii=False))
+
+    def target_expired(self):
+        self.target_supported = False
+        self.send_mode, self.busy_started = None, None
+        self.cancel_job("ai")
+        self.remember()
+        self.target_label.set_text("目标已失效 · 请点中目标输入框后重新打开")
+        self.show_message("发送已暂停，文本已留在记录中；回到目标输入框重新打开，按 ↑ 找回")
+        self.update_send_state()
 
     def refresh_config(self, reset_language=False):
         self.cfg = core.load_config()
@@ -210,21 +301,29 @@ class EditorWindow(Gtk.ApplicationWindow):
         dark = self.cfg["panel"]["theme"] == "dark"
         background, surface, foreground, border, accent = (
             ("#282a36", "#343746", "#f2f2f2", "#505362", "#bd93f9") if dark else
-            ("#f1f1f1", "#ffffff", "#252525", "#cdcdcd", "#525252"))
+            ("#f4f4f4", "#ffffff", "#252525", "#d9d9d9", "#454545"))
+        muted = "#b1b3c4" if dark else "#646464"
         css = """
         * {font-family: "Noto Sans CJK SC", "Noto Sans CJK TC", sans-serif;}
         window, dialog, notebook, notebook header {background: BG; color: FG;}
         textview, textview text, entry, treeview {background: SF; color: FG;}
-        button, combobox button {background: SF; color: FG; border-color: BD; box-shadow: none;}
+        button, combobox button {background: SF; color: FG; border: 1px solid BD;
+                                border-radius: 7px; box-shadow: none; padding: 7px 10px; min-height: 18px;}
+        button:hover {border-color: AC;} button:disabled {opacity: 0.65;}
         checkbutton check:checked {background: AC; color: SF; border-color: AC;}
         notebook tab:checked {background: SF; border-color: AC;} *:focus {outline-color: AC;}
         notebook header tabs tab:checked {box-shadow: none; border-bottom: 2px solid AC;}
         label, checkbutton {color: FG;} selection {background: AC; color: SF;}
+        .panel-title {font-size: 15px; font-weight: 600;}
+        .muted {color: MUTED; font-size: 11px;}
+        .badge {background: SF; color: MUTED; border-radius: 5px; padding: 3px 7px; font-size: 11px;}
         .source {font-size: 17px;} .preview {font-size: 12px;}
         .send {background: AC; color: BG; text-shadow: none;}
-        .send label {color: BG; text-shadow: none;} scrolledwindow {border: 1px solid BD;}
+        .send label, .send image, .send spinner {color: BG; text-shadow: none;}
+        scrolledwindow {border: 1px solid BD; border-radius: 8px; background: SF;}
+        paned separator {background: transparent; min-width: 4px;}
         """
-        for key, value in (("BG", background), ("SF", surface), ("FG", foreground), ("BD", border), ("AC", accent)):
+        for key, value in (("MUTED", muted), ("BG", background), ("SF", surface), ("FG", foreground), ("BD", border), ("AC", accent)):
             css = css.replace(key, value)
         if hasattr(self, "css"):
             Gtk.StyleContext.remove_provider_for_screen(Gdk.Screen.get_default(), self.css)
@@ -236,26 +335,41 @@ class EditorWindow(Gtk.ApplicationWindow):
         for name, button in self.buttons.items():
             button.set_no_show_all(name not in enabled)
             button.set_visible(name in enabled)
+        self.ai_configured = core.provider_ready(self.cfg)
+        self.auto_ai_toggle.set_active(self.cfg.getboolean("panel", "auto_ai_send"))
+        self.theme.get_child().get_children()[0].set_from_icon_name(
+            "weather-clear-symbolic" if dark else "weather-clear-night-symbolic", Gtk.IconSize.BUTTON)
         self.refreshing = False
+        self.update_send_state()
 
     def open(self, token):
         if self.queued:
             self.show_message("正在等待原输入框，完成或取消后再打开")
             return
+        if self.text().strip():
+            self.remember()
         self.token = token
+        self.target_supported = True
         self.refresh_config(reset_language=True)
         try:
             raw = (core.CACHE_DIR / "panel-open").read_text(encoding="utf-8").split("\n", 1)
             if raw[0] == token and len(raw) == 2 and raw[1]:
-                self.buffer.insert_at_cursor(raw[1])
+                if self.cfg.getboolean("panel", "history_enabled"):
+                    self.history.add(raw[1])
             if raw[0] == token:
                 (core.CACHE_DIR / "panel-open").unlink(missing_ok=True)
             state = call_bridge("State", "(s)", (token,))
-            self.target_supported = state != "unsupported"
+            self.target_supported = state == "editing"
+            target = call_bridge("Target", "(s)", (token,))
+            self.target_label.set_text("发送到：" + target)
+            self.target_label.set_tooltip_text("最近选择的真实输入位置 · " + target + "；悬浮编辑区不会成为发送目标")
             self.show_message("GNOME 桌面桥接未启用：运行 sync 和 enable 后注销再登录"
                               if state == "unsupported" else "选词先进入原文；发送时自动返回原输入框")
         except (OSError, GLib.Error):
             self.show_message("未绑定输入框。请在 Rime Translator 输入框中用快捷键或菜单打开")
+        self.history.index, self.history.bookmark = -1, ""
+        self.buffer.set_text("")
+        self.persist_history()
         self.hidden_at = None
         self.show_all()
         self.present()
@@ -264,8 +378,7 @@ class EditorWindow(Gtk.ApplicationWindow):
         if not self.target_supported:
             self.send_button.set_sensitive(False)
             self.show_message("请运行 rime-llm-translator sync && rime-llm-translator enable，注销再登录以启用桌面桥接")
-        else:
-            self.send_button.set_sensitive(True)
+        self.update_send_state()
 
     def changed(self, *_):
         if not hasattr(self, "languages") or getattr(self, "refreshing", False):
@@ -274,11 +387,19 @@ class EditorWindow(Gtk.ApplicationWindow):
             self.history.index = -1
         self.draft.edit(self.text(), self.languages.get_active_id() or "en")
         self.send_mode = None
+        self.busy_started = None
+        self.update_send_state()
+        self.counter.set_text("%d 字" % len(self.text()))
+        self.preview_mode.set_text("机翻")
         for mode in ("mt", "ai"):
             self.cancel_job(mode)
         if self.debounce:
             GLib.source_remove(self.debounce)
+            self.debounce = 0
         self.preview.get_buffer().set_text("")
+        if not self.text().strip():
+            self.show_message("输入原文开始预览 · 空白时按 ↑ 找回记录")
+            return
         if len(self.text().encode()) > MAX_BYTES:
             self.show_message("原文超过 32 KiB，请缩短或分次发送；不会截断发送")
             return
@@ -307,6 +428,7 @@ class EditorWindow(Gtk.ApplicationWindow):
     def ai(self, *_):
         self.remember()
         if "ai" in self.draft.results:
+            self.preview_mode.set_text("AI")
             self.preview.get_buffer().set_text(self.draft.results["ai"])
             self.show_message("AI 译文 · 本次结果已复用")
         else:
@@ -316,6 +438,11 @@ class EditorWindow(Gtk.ApplicationWindow):
         if self.queued or self.composing:
             self.show_message("请先完成拼音选词，再发送译文")
             return
+        if not self.text().strip():
+            self.show_message("请先输入原文，或按 ↑ 找回最近记录")
+            return
+        if self.send_mode is not None:
+            return  # The button and recorded send shortcut share one intent.
         if not self.token:
             self.show_message("请从目标输入框打开长文本模式，再发送")
             return
@@ -324,16 +451,19 @@ class EditorWindow(Gtk.ApplicationWindow):
             return
         try:
             if call_bridge("State", "(s)", (self.token,)) != "editing":
-                self.show_message("发送目标已失效，请从原输入框重新打开；原文已保留")
+                self.target_expired()
                 return
         except GLib.Error:
             self.show_message("输入法连接已失效，请重新打开长文本；原文已保留")
             return
-        mode, text = self.draft.begin_send(self.cfg.getboolean("panel", "auto_ai_send"))
+        mode, text = self.draft.begin_send(core.auto_ai_enabled(self.cfg))
         self.send_mode = mode
         if text:
             self.queue(text)
         else:
+            if mode == "ai":
+                self.busy_started = time.monotonic()
+            self.update_send_state()
             self.request(mode)
 
     def queue(self, text):
@@ -343,6 +473,8 @@ class EditorWindow(Gtk.ApplicationWindow):
             call_bridge("Queue", "(ss)", (self.token, text))
         except GLib.Error:
             self.send_mode = None
+            self.busy_started = None
+            self.update_send_state()
             self.show_message("无法安全发送到原目标；原文保留。可在译文上右键复制，或从目标重新打开")
             return
         self.remember()
@@ -355,6 +487,8 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.show_message("正在返回原输入框并发送译文")
 
     def poll(self):
+        if self.busy_started is not None:
+            self.update_send_state()
         if self.queued:
             try:
                 state = call_bridge("State", "(s)", (self.token,))
@@ -362,17 +496,32 @@ class EditorWindow(Gtk.ApplicationWindow):
                 state = "failed"
             if state != "waiting":
                 self.queued = False
+                self.busy_started = None
+                self.send_mode = None
                 if state == "sent":
                     self.draft.sent()
-                    self.preview.get_buffer().set_text("")
-                    self.send_mode = None
+                    self.buffer.set_text("")
+                    self.persist_history()
                     self.hidden_at = time.monotonic()
                     self.show_message("译文已发送；下次恢复机翻预览")
                 else:
                     self.show_all()
                     self.present()
                     self.show_message("发送已取消或超时，原文保留。请重新打开目标后发送")
+                self.update_send_state()
             return True
+        if self.token and self.get_visible() and self.target_supported and time.monotonic() >= self.next_target_check:
+            self.next_target_check = time.monotonic() + .6
+            try:
+                state = call_bridge("State", "(s)", (self.token,))
+            except GLib.Error:
+                state = "failed"
+            if state not in ("editing", "sent"):
+                self.target_expired()
+            elif state == "editing":
+                target = call_bridge("Target", "(s)", (self.token,))
+                self.target_label.set_text("发送到：" + target)
+                self.target_label.set_tooltip_text("最近选择的真实输入位置 · " + target + "；悬浮编辑区不会成为发送目标")
         for mode in ("mt", "ai"):
             job = self.draft.jobs.get(mode)
             if not job or job.get("done"):
@@ -390,10 +539,14 @@ class EditorWindow(Gtk.ApplicationWindow):
                 self.draft.jobs.pop(mode, None)  # explicit retry is permitted
                 if self.send_mode == mode:
                     self.send_mode = None
+                    self.busy_started = None
+                    self.update_send_state()
             else:
                 if mode == "ai" or "ai" not in self.draft.results:
                     self.preview.get_buffer().set_text(result["text"])
-                    self.show_message(("AI 译文" if mode == "ai" else "机翻预览") + " · " + self.draft.language.upper())
+                    self.preview_mode.set_text("AI" if mode == "ai" else "机翻")
+                    if not (self.send_mode == "ai" and mode == "mt"):
+                        self.show_message(("AI 译文" if mode == "ai" else "机翻预览") + " · " + self.draft.language.upper())
                 if self.send_mode == mode and self.draft.ready(mode):
                     self.queue(result["text"])
         if self.hidden_at and time.monotonic() - self.hidden_at > 120:
@@ -408,12 +561,12 @@ class EditorWindow(Gtk.ApplicationWindow):
         width, height = self.get_size()
         cfg["panel"]["width"], cfg["panel"]["height"] = str(width), str(height)
         core.save_config(cfg)
-        core.atomically_write(DATA_PATH, json.dumps({"draft": self.text() if len(self.text().encode()) <= MAX_BYTES else "",
-                                                     "history": self.history.entries}, ensure_ascii=False))
+        self.persist_history()
 
     def close_panel(self, *_):
         self.remember()
         self.send_mode = None
+        self.busy_started = None
         for mode in ("mt", "ai"):
             self.cancel_job(mode)
         if self.token:
@@ -422,6 +575,7 @@ class EditorWindow(Gtk.ApplicationWindow):
             except GLib.Error:
                 pass
         self.queued = False
+        self.update_send_state()
         self.hide()
         self.hidden_at = time.monotonic()
         return True
@@ -450,6 +604,7 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.refresh_config()
 
     def settings(self, *_):
+        self.remember()
         Settings(self).run_and_save()
 
     def action(self, binding):
@@ -600,7 +755,7 @@ class Settings(Gtk.Dialog):
 
     def clear_history(self, *_):
         self.editor.history = History()
-        core.atomically_write(DATA_PATH, json.dumps({"draft": self.editor.text(), "history": []}, ensure_ascii=False))
+        self.editor.persist_history()
         for child in self.history_box.get_children():
             child.destroy()
 

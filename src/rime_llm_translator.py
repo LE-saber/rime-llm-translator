@@ -58,7 +58,7 @@ def config_default():
                           "offline_revision": rime_mt.revision(),
                           "ai_hotkey": DEFAULT_AI_HOTKEY}
     cfg["panel"] = {"open_hotkey": "Alt+space", "send_hotkey": "Control+Return",
-                    "preferred_language": "en", "auto_ai_send": "false", "theme": "light",
+                    "preferred_language": "en", "auto_ai_send": "true", "preferences_revision": "12", "theme": "light",
                     "history_enabled": "true", "width": "900", "height": "420",
                     "buttons": "copy,paste,symbols,translate,settings"}
     return cfg
@@ -66,7 +66,13 @@ def config_default():
 def load_config():
     cfg = config_default()
     if CONFIG_PATH.exists():
-        cfg.read(CONFIG_PATH, encoding="utf-8")
+        saved = configparser.ConfigParser(interpolation=None)
+        saved.read(CONFIG_PATH, encoding="utf-8")
+        cfg.read_dict({section: dict(saved[section]) for section in saved.sections()})
+        # preview10/11 wrote false as the default, without recording a user
+        # choice. Migrate once; all subsequent explicit choices are preserved.
+        if not saved.has_option("panel", "preferences_revision"):
+            cfg["panel"]["auto_ai_send"] = "true"
     cfg["translation"]["offline_revision"] = rime_mt.revision()
     return cfg
 
@@ -75,6 +81,19 @@ def save_config(cfg):
     contents = StringIO()
     cfg.write(contents)
     atomically_write(CONFIG_PATH, contents.getvalue())
+
+
+def provider_ready(cfg):
+    """Local readiness only; checking configuration must never call the API."""
+    try:
+        chat_url(cfg["provider"]["base_url"])
+        return bool(cfg["provider"]["model"].strip() and KEY_PATH.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+
+
+def auto_ai_enabled(cfg):
+    return cfg.getboolean("panel", "auto_ai_send") and provider_ready(cfg)
 
 def parse_languages(raw):
     result = {}

@@ -3,6 +3,6 @@
   "name": "Rime Translator floating panel",
   "description": "Restore the original translation target and keep the Rime long-text panel above application windows.",
   "shell-version": ["46"],
-  "version": 11,
+  "version": 12,
   "url": "https://github.com/LE-saber/rime-llm-translator"
 }

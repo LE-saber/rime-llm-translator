@@ -102,7 +102,7 @@ def check_send_contrast(editor):
         channels = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
                     for value in (color.red, color.green, color.blue)]
         return sum(value * weight for value, weight in zip(channels, (.2126, .7152, .0722)))
-    foreground = editor.send_button.get_child().get_style_context().get_color(Gtk.StateFlags.NORMAL)
+    foreground = editor.send_label.get_style_context().get_color(Gtk.StateFlags.NORMAL)
     background = editor.send_button.get_style_context().get_background_color(Gtk.StateFlags.NORMAL)
     a, b = sorted((luminance(foreground), luminance(background)))
     assert (b + .05) / (a + .05) >= 4.5, "Send button label has insufficient contrast"
@@ -124,9 +124,10 @@ try:
     assert target.process_key_event(0xffc6, 0, 12), "open chord not handled"
     wait(lambda: app.window is not None and app.window.token, "native GTK editor opened by IBus chord")
     editor = app.window
-    assert editor.text().startswith("謝謝"), editor.text()
+    assert editor.text() == "", editor.text()
+    assert editor.history.entries[0].startswith("謝謝"), editor.history.entries
     assert target_commits == [], "Chinese source leaked into target"
-    print("PASS: Traditional Rime composition transferred privately into editable draft", flush=True)
+    print("PASS: opening starts empty and preserves Traditional Rime composition in private history", flush=True)
     editor_context = bus.create_input_context("gtk3-im:rime-llm-panel")
     editor_context.set_capabilities(1 | 2 | 4 | 8)
     editor_context.connect("commit-text", lambda _, text: editor.buffer.insert_at_cursor(text.get_text()))
@@ -152,6 +153,28 @@ try:
     assert recorder.value == "Control+Button8"
     recorder.destroy()
     print("PASS: native keyboard and side-button recording", flush=True)
+    editor.buffer.set_text("没有发送也要保存。")
+    editor.close_panel()
+    editor_context.focus_out()
+    focus(target)
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token and editor.get_visible(), "unsent draft reopens empty")
+    assert editor.text() == "" and editor.history.entries[0] == "没有发送也要保存。"
+    assert "draft" not in json.loads(gui.DATA_PATH.read_text())
+    target.focus_out()
+    focus(editor_context)
+    editor.source.grab_focus()
+    assert editor.do_key_press_event(event(Gdk.KEY_Up))
+    assert editor.text() == "没有发送也要保存。"
+    assert editor.do_key_press_event(event(Gdk.KEY_Up))
+    assert editor.text().startswith("謝謝")
+    editor.do_key_press_event(event(Gdk.KEY_Down))
+    editor.do_key_press_event(event(Gdk.KEY_Down))
+    assert editor.text() == ""
+    assert editor.auto_ai_toggle.get_active() and core.auto_ai_enabled(editor.cfg)
+    for button in editor.buttons.values():
+        assert button.get_tooltip_text() and button.get_accessible().get_name()
+    print("PASS: empty reopen, unsent history, sequential Up/Down recall and default AI send", flush=True)
     workers = [subprocess.Popen(["rime-llm-translator", mode]) for mode in ("serve", "serve-ai")]
     editor.buffer.set_text("你好，谢谢。\n我们明天见。")
     wait(lambda: "mt" in editor.draft.results, "real packaged MT translates multiline draft", 55)
@@ -171,10 +194,20 @@ try:
     assert cloud["calls"] == calls and "ai" not in editor.draft.results
     print("PASS: no sticky AI after edit; cloud count unchanged", flush=True)
     # Send using matching auto-AI, reusing a request still in flight.
-    cloud["delay"] = .3
+    cloud["delay"] = .8
     editor.cfg["panel"]["auto_ai_send"] = "true"
     editor.ai()
     editor.send()
+    pump(.15)
+    assert editor.send_spinner.get_visible() and editor.send_spinner.get_property("active")
+    assert " s" in editor.send_label.get_text() and not editor.send_button.get_sensitive()
+    assert target_commits == [], "MT leaked while waiting for AI"
+    first_timer = editor.send_label.get_text()
+    pump(.18)
+    assert editor.send_label.get_text() != first_timer, "AI elapsed seconds did not advance"
+    screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
+    screenshot.savev("dist/native-ai-sending.png", "png", [], [])
+    editor.send()  # Duplicate shortcut must not create another send intent.
     wait(lambda: editor.queued, "AI send waits before queuing")
     assert cloud["calls"] == calls + 2  # two paragraphs, no duplicate job
     editor_context.focus_out()
@@ -182,9 +215,34 @@ try:
     print("Send target:", gui.call_bridge("Focus"), gui.call_bridge("State", "(s)", (editor.token,)), flush=True)
     wait(lambda: target_commits and not editor.queued, "translation commits only after original target focuses", 12)
     assert target_commits[0].startswith("AI:") and "ai" not in editor.draft.results
+    assert editor.text() == "" and not editor.send_spinner.get_property("active")
+    # Before sending, the latest real input context replaces A with B. Returning
+    # to the editor must never replace B with the panel's own TextView.
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token and editor.get_visible(), "session for latest real input target")
+    latest = bus.create_input_context("latest-real-text-field")
+    latest.set_capabilities(1 | 2 | 4 | 8)
+    latest_commits = []
+    latest.connect("commit-text", lambda _, text: latest_commits.append(text.get_text()))
+    target.focus_out()
+    focus(latest)
+    latest.focus_out()
+    focus(editor_context)
+    editor.cfg["panel"]["auto_ai_send"] = "false"
+    editor.buffer.set_text("发送到后来选择的输入框。")
+    wait(lambda: "mt" in editor.draft.results, "MT ready after selecting B")
+    assert gui.call_bridge("Target", "(s)", (token,)) == "latest-real-text-field"
+    editor.send()
+    editor_context.focus_out()
+    focus(latest)
+    wait(lambda: latest_commits and not editor.queued, "latest real field receives translation, never the panel")
+    assert len(target_commits) == 1 and editor.text() == ""
+    latest.focus_out()
+    focus(target)
     # A different context must cancel and can never receive the pending translation.
     token = gui.call_bridge("Open")
-    wait(lambda: editor.token == token and editor.get_visible(), "reopen keeps native draft")
+    wait(lambda: editor.token == token and editor.get_visible(), "reopen starts empty after successful send")
+    assert editor.text() == ""
     target.focus_out()
     focus(editor_context)
     editor.cfg["panel"]["auto_ai_send"] = "false"
@@ -208,6 +266,7 @@ try:
     target.focus_out()
     focus(editor_context)
     editor.cfg["panel"]["auto_ai_send"] = "true"
+    editor.buffer.set_text("发送前修改的原文。")
     before_calls = cloud["calls"]
     editor.send()
     wait(lambda: cloud["calls"] > before_calls, "AI send request is in flight")

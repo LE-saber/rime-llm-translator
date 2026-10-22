@@ -9,15 +9,19 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 const NAME = 'im.rime.LLMTranslator.Shell';
 const PATH = '/im/rime/LLMTranslator/Shell';
 const XML = `<node><interface name="${NAME}">
-  <method name="Begin"><arg type="s" direction="in"/><arg type="b" direction="out"/></method>
+  <method name="Begin"><arg type="s" direction="in"/><arg type="b" direction="out"/><arg type="s" direction="out"/></method>
   <method name="Restore"><arg type="s" direction="in"/><arg type="s" direction="out"/></method>
+  <method name="Retarget"><arg type="s" direction="in"/><arg type="b" direction="out"/><arg type="s" direction="out"/></method>
   <method name="Submit"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="out"/></method>
   <method name="End"><arg type="s" direction="in"/><arg type="s" direction="out"/></method>
+  <signal name="TargetLost"><arg type="s"/></signal>
+  <signal name="TargetChanged"><arg type="s"/><arg type="s"/></signal>
 </interface></node>`;
 
 function isPanel(window) {
     return window && (window.get_gtk_application_id() === 'im.rime.LLMTranslator.Panel' ||
-        window.get_wm_class() === 'rime-llm-panel');
+        window.get_wm_class()?.toLowerCase() === 'rime-llm-panel' ||
+        window.get_wm_class_instance() === 'rime-llm-panel');
 }
 
 export default class RimeTranslator extends Extension {
@@ -29,8 +33,29 @@ export default class RimeTranslator extends Extension {
             Gio.BusNameOwnerFlags.NONE, null, null);
         this._focusSignal = global.display.connect('notify::focus-window', () => {
             const window = global.display.focus_window;
-            if (this._lease && window && window !== this._lease.window && !isPanel(window))
-                this._end();
+            const lease = this._lease;
+            if (!lease || !window)
+                return;
+            if (lease.restoring && window !== lease.window && !isPanel(window)) {
+                this._lose();
+            } else if (!isPanel(window) && !lease.restoring && !lease.sent) {
+                // Wait for the client to enable its actual text widget. Merely
+                // focusing an application with no text caret is not a target.
+                if (this._settleSource)
+                    GLib.source_remove(this._settleSource);
+                this._settleSource = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 60, () => {
+                    this._settleSource = 0;
+                    if (this._lease === lease && global.display.focus_window === window)
+                        this._capture(window);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        });
+        // Changing fields/caret inside one Wayland window need not change the
+        // Meta.Window or InputFocus object. The client supplies a fresh text
+        // context here. Panel and settings windows are explicitly excluded.
+        this._surroundingSignal = Main.inputMethod.connect('surrounding-text-set', () => {
+            this._capture(global.display.focus_window);
         });
         this._mapSignal = global.window_manager.connect('map', (_wm, actor) => {
             const window = actor.meta_window;
@@ -43,14 +68,45 @@ export default class RimeTranslator extends Extension {
         });
         this._lockSignal = Main.sessionMode.connect('updated', () => {
             if (Main.sessionMode.isLocked)
-                this._end();
+                this._lose();
         });
     }
 
     _end() {
+        if (this._settleSource) {
+            GLib.source_remove(this._settleSource);
+            this._settleSource = 0;
+        }
         if (this._lease?.destroySignal)
             this._lease.window.disconnect(this._lease.destroySignal);
         this._lease = null;
+    }
+
+    _capture(window, ibusConfirmed = false) {
+        const lease = this._lease;
+        const im = Main.inputMethod;
+        if (!lease || lease.restoring || lease.sent || !window || isPanel(window) ||
+            Main.overview.visible || Main.modalCount > 0 || Main.sessionMode.isLocked ||
+            (!im.currentFocus && !ibusConfirmed))
+            return false;
+        if (im._purpose === IBus.InputPurpose.PASSWORD || im._purpose === IBus.InputPurpose.PIN) {
+            this._lose();
+            return false;
+        }
+        if (lease.destroySignal)
+            lease.window.disconnect(lease.destroySignal);
+        lease.window = window;
+        lease.focus = im.currentFocus;
+        lease.surrounding = im.getSurroundingText();
+        lease.destroySignal = window.connect('unmanaged', () => this._lose());
+        this._object.emit_signal('TargetChanged', new GLib.Variant('(ss)', [lease.token, window.get_title() ?? '']));
+        return true;
+    }
+
+    _lose() {
+        if (this._lease)
+            this._object.emit_signal('TargetLost', new GLib.Variant('(s)', [this._lease.token]));
+        this._end();
     }
 
     _valid(token, invocation) {
@@ -75,9 +131,14 @@ export default class RimeTranslator extends Extension {
             this._end();
             this._lease = {token, owner, window, focus: Main.inputMethod.currentFocus,
                 surrounding: Main.inputMethod.getSurroundingText(), sent: false, restoring: false};
-            this._lease.destroySignal = window.connect('unmanaged', () => this._end());
+            this._lease.destroySignal = window.connect('unmanaged', () => this._lose());
         }
-        invocation.return_value(new GLib.Variant('(b)', [Boolean(valid)]));
+        invocation.return_value(new GLib.Variant('(bs)', [Boolean(valid), valid ? window.get_title() ?? '' : '']));
+    }
+
+    RetargetAsync([token], invocation) {
+        const valid = this._valid(token, invocation) && this._capture(global.display.focus_window, true);
+        invocation.return_value(new GLib.Variant('(bs)', [Boolean(valid), valid ? this._lease.window.get_title() ?? '' : '']));
     }
 
     RestoreAsync([token], invocation) {
@@ -90,7 +151,7 @@ export default class RimeTranslator extends Extension {
                 Main.activateWindow(this._lease.window);
                 status = 'waiting';
             } else {
-                this._end();
+                this._lose();
             }
         }
         invocation.return_value(new GLib.Variant('(s)', [status]));
@@ -116,7 +177,7 @@ export default class RimeTranslator extends Extension {
                         purpose === IBus.InputPurpose.PASSWORD || purpose === IBus.InputPurpose.PIN ||
                         !text || new TextEncoder().encode(text).length > 262144) {
                         status = 'cancelled';
-                        this._end();
+                        this._lose();
                     } else {
                         im.commit(text);
                         lease.sent = true;
@@ -135,8 +196,9 @@ export default class RimeTranslator extends Extension {
     }
 
     disable() {
-        this._end();
+        this._lose();
         global.display.disconnect(this._focusSignal);
+        Main.inputMethod.disconnect(this._surroundingSignal);
         global.window_manager.disconnect(this._mapSignal);
         Main.sessionMode.disconnect(this._lockSignal);
         this._object.unexport();

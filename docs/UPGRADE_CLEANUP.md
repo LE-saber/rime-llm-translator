@@ -17,7 +17,7 @@ pip 缓存可能也包含其他 Python 项目的下载/构建文件，清理后�
 ## 安装、验证新版本
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview11_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb
 rime-llm-translator sync && rime-llm-translator enable
 rime-llm-translator install-offline
 rime-llm-translator doctor

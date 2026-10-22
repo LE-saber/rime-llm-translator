@@ -15,7 +15,7 @@ static GDBusConnection* connection;
 static IBusBus* ibus;
 static guint focus_epoch;
 static IBusEngine* focused;
-static gchar *focus_id, *focus_client, *target_id, *token, *peer, *pending;
+static gchar *focus_id, *focus_client, *target_id, *target_name, *token, *peer, *pending;
 static const gchar* status = "closed";
 static gint64 expires;
 static gint64 alt_down, alt_last;
@@ -33,6 +33,19 @@ static void cancel(void) {
     shell_call("End", g_variant_new("(s)", token), NULL, NULL);
   g_clear_pointer(&pending, g_free);
   status = "cancelled";
+}
+
+static void retarget_ready(GObject* object, GAsyncResult* result, gpointer data) {
+  gchar* requested = data;
+  GError* error = NULL;
+  GVariant* reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(object), result, &error);
+  if (reply && !g_strcmp0(token, requested) && !strcmp(status, "editing")) {
+    gboolean valid;
+    const gchar* name;
+    g_variant_get(reply, "(b&s)", &valid, &name);
+    if (valid) { g_free(target_name); target_name = g_strdup(name); }
+  }
+  g_clear_pointer(&reply, g_variant_unref); g_clear_error(&error); g_free(requested);
 }
 
 static void shell_sent(GObject* object, GAsyncResult* result, gpointer data) {
@@ -92,6 +105,18 @@ void rime_panel_focus(IBusEngine* engine, const char* context, const char* clien
   g_free(focus_id); focus_id = g_strdup(context);
   g_free(focus_client); focus_client = g_strdup(client);
   alt_count = 0; alt_down = 0; alt_last = 0;
+  gboolean panel = g_str_has_suffix(client, ":rime-llm-panel");
+  if (!strcmp(status, "editing") && !pending && !panel &&
+      strcmp(client, "fake") && strcmp(client, "unknown")) {
+    /* A real text context replaces the destination, while the panel's own
+       editor/settings and IBus's synthetic focus never become destinations. */
+    g_free(target_id); target_id = g_strdup(context);
+    if (shell_target)
+      shell_call("Retarget", g_variant_new("(s)", token), retarget_ready, g_strdup(token));
+    else {
+      g_free(target_name); target_name = g_strdup(client);
+    }
+  }
   /* Never submit into an unrelated context, even if the user returns later. */
   if (pending && g_strcmp0(target_id, context) &&
       strcmp(client, "fake") && !g_str_has_suffix(client, ":rime-llm-panel")) cancel();
@@ -138,7 +163,11 @@ static void shell_begin(GObject* object, GAsyncResult* result, gpointer data) {
   GVariant* reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(object), result, &error);
   if (!g_strcmp0(token, requested) && !strcmp(status, "opening")) {
     shell_target = FALSE;
-    if (reply) g_variant_get(reply, "(b)", &shell_target);
+    if (reply) {
+      const gchar* name;
+      g_variant_get(reply, "(b&s)", &shell_target, &name);
+      if (shell_target) { g_free(target_name); target_name = g_strdup(name); }
+    }
     status = (!shell_target && (!g_strcmp0(focus_client, "gnome-shell") ||
                                !g_strcmp0(focus_client, "fake"))) ? "unsupported" : "editing";
     gchar* argv[] = {"/usr/bin/rime-llm-translator", "panel", token, NULL};
@@ -156,6 +185,7 @@ void rime_panel_open(IBusEngine* engine) {
   if (purpose == IBUS_INPUT_PURPOSE_PASSWORD || purpose == IBUS_INPUT_PURPOSE_PIN) return;
   cancel();
   g_free(target_id); target_id = g_strdup(focus_id);
+  g_free(target_name); target_name = g_strdup(focus_client);
   g_free(token); token = g_uuid_string_random();
   g_clear_pointer(&peer, g_free);
   shell_target = FALSE; shell_busy = FALSE;
@@ -261,7 +291,10 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
     return;
   }
   if (!peer) peer = g_strdup(sender);
-  if (!strcmp(name, "Restore")) {
+  if (!strcmp(name, "Target")) {
+    g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", target_name ? target_name : "IBus"));
+    return;
+  } else if (!strcmp(name, "Restore")) {
     if (pending && shell_target) {
       shell_busy = TRUE;
       shell_call("Restore", g_variant_new("(s)", token), shell_sent, g_strdup(token));
@@ -281,12 +314,31 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
   g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", status));
 }
 
+static void target_lost(GDBusConnection* conn, const gchar* sender, const gchar* path,
+                        const gchar* iface, const gchar* name, GVariant* args, gpointer unused) {
+  const gchar* lost;
+  g_variant_get(args, "(&s)", &lost);
+  if (token && !strcmp(token, lost) && strcmp(status, "sent") && strcmp(status, "closed")) {
+    cancel(); status = "target-lost";
+  }
+}
+
+static void target_changed(GDBusConnection* conn, const gchar* sender, const gchar* path,
+                           const gchar* iface, const gchar* name, GVariant* args, gpointer unused) {
+  const gchar *changed, *title;
+  g_variant_get(args, "(&s&s)", &changed, &title);
+  if (token && !strcmp(token, changed) && !strcmp(status, "editing") && !pending) {
+    g_free(target_name); target_name = g_strdup(title);
+  }
+}
+
 void rime_panel_init(IBusBus* bus) {
   ibus = bus;
   const gchar* xml = "<node><interface name='" BRIDGE "'>"
     "<method name='Focus'><arg type='s' direction='out'/></method>"
     "<method name='Open'><arg type='s' direction='out'/></method>"
     "<method name='State'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
+    "<method name='Target'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Cancel'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Restore'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Queue'><arg type='s' direction='in'/><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
@@ -298,6 +350,10 @@ void rime_panel_init(IBusBus* bus) {
   static const GDBusInterfaceVTable vtable = {method, NULL, NULL, {0}};
   g_dbus_connection_register_object(connection, PATH, info->interfaces[0], &vtable, NULL, NULL, NULL);
   g_bus_own_name_on_connection(connection, BRIDGE, G_BUS_NAME_OWNER_FLAGS_NONE, NULL, NULL, NULL, NULL);
+  g_dbus_connection_signal_subscribe(connection, SHELL, SHELL, "TargetLost", SHELL_PATH,
+                                     NULL, G_DBUS_SIGNAL_FLAGS_NONE, target_lost, NULL, NULL);
+  g_dbus_connection_signal_subscribe(connection, SHELL, SHELL, "TargetChanged", SHELL_PATH,
+                                     NULL, G_DBUS_SIGNAL_FLAGS_NONE, target_changed, NULL, NULL);
   g_dbus_node_info_unref(info);
   g_timeout_add(50, submit, NULL);
 }

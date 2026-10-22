@@ -116,22 +116,29 @@ try:
     app = gui.Application()
     assert app.register(None)
     wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "real shared Wayland IBus context", 45)
+    call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget",
+         "Seed", "(si)", ("前后", 1))
+    wait(lambda: shell("global.rimeTestMain.inputMethod.getSurroundingText()[1] === 1"), "original target caret captured between existing characters")
+    expected_translation = "前Hello, world!后"
     token = gui.call_bridge("Open")
     wait(lambda: app.window is not None and app.window.token == token, "editor opened from target")
     editor = app.window
     assert editor.target_supported and editor.send_button.get_sensitive(), editor.message.get_text()
     # A different session-bus sender cannot use or replace the frontend lease.
     assert call("im.rime.LLMTranslator.Shell", "/im/rime/LLMTranslator/Shell",
-                "im.rime.LLMTranslator.Shell", "Begin", "(s)", (token,)) == (False,)
+                "im.rime.LLMTranslator.Shell", "Begin", "(s)", (token,)) == (False, "")
     assert call("im.rime.LLMTranslator.Shell", "/im/rime/LLMTranslator/Shell",
                 "im.rime.LLMTranslator.Shell", "Submit", "(ss)", (token, "unauthorized")) == ("cancelled",)
-    assert target_text() == ""
+    assert target_text() == "前后"
     wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Rime Translator · 长文本' && a.meta_window.above && a.meta_window.skip_taskbar)"), "floating panel is above and excluded from taskbar")
     wait(lambda: shell("global.display.focus_window?.get_title() === 'Rime Translator · 长文本'"), "opening focuses the floating editor")
     assert not editor.get_decorated()
+    assert "Wayland translation target" in editor.target_label.get_text()
+    assert editor.text() == ""
     screenshot = gui.Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
     screenshot.savev(str(root / "dist/native-wayland.png"), "png", [], [])
     editor.buffer.set_text("你好，世界")
+    editor.buffer.place_cursor(editor.buffer.get_start_iter())
     if editor.debounce:
         GLib.source_remove(editor.debounce)
         editor.debounce = 0
@@ -142,34 +149,63 @@ try:
     wait(lambda: not editor.queued, "send completes after automatic focus restoration")
     print("Send outcome:", gui.call_bridge("State", "(s)", (token,)),
           gui.call_bridge("Focus"), editor.message.get_text(), flush=True)
-    wait(lambda: target_text() == "Hello, world!", "translation reached the real native Wayland text buffer", 4)
-    assert target_text() == "Hello, world!", target_text()
+    wait(lambda: target_text() == expected_translation, "translation reached original Wayland caret despite panel caret movement", 4)
+    assert target_text() == expected_translation, target_text()
     assert gui.call_bridge("State", "(s)", (token,)) == "sent"
+    assert editor.text() == ""
     print("PASS: real Wayland target received exactly the translation, once", flush=True)
     # Repeating Restore must not duplicate a completed send.
     gui.call_bridge("Restore", "(s)", (token,))
     for _ in range(10):
         pump()
-    assert target_text() == "Hello, world!"
+    assert target_text() == expected_translation
     token = gui.call_bridge("Open")
-    wait(lambda: editor.token == token, "session for unrelated-window isolation")
+    wait(lambda: editor.token == token and editor.get_visible(), "session for switching A to B")
+    editor.buffer.set_text("这是保留在面板里的文本")
     call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "Other")
-    wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Unrelated text target')"), "another real input window mapped")
+    wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Unrelated text target')"), "real target B mapped")
     shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Unrelated text target').meta_window.activate(global.get_current_time()); true")
-    wait(lambda: shell("global.display.focus_window?.get_title() === 'Unrelated text target'"), "unrelated window focused")
-    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
-    wait(lambda: shell("global.display.focus_window?.get_title() === 'Wayland translation target'"), "return to old window does not renew lease")
-    editor.buffer.set_text("不要误发")
-    editor.draft.results["mt"] = "Never redirect"
+    wait(lambda: "Unrelated text target" in gui.call_bridge("Target", "(s)", (token,)), "latest real input B replaces A")
+    wait(lambda: shell("global.rimeTestMain.inputMethod.currentFocus !== null && global.display.focus_window?.get_title() === 'Unrelated text target'"), "B has an actual text caret")
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Rime Translator · 长文本').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Rime Translator · 长文本'"), "return to editor preserves B")
+    assert editor.text() == "这是保留在面板里的文本"
+    dialog = gui.Settings(editor)
+    dialog.show_all()
+    dialog.entries["model"].grab_focus()
+    for _ in range(10):
+        pump()
+    assert "Unrelated text target" in gui.call_bridge("Target", "(s)", (token,)), "settings field replaced real B"
+    dialog.destroy()
+    editor.source.grab_focus()
+    editor.buffer.insert_at_cursor("，继续修改。")
+    editor.draft.results["mt"] = "Translation to B"
     editor.send()
-    wait(lambda: not editor.queued, "switching windows invalidates send")
-    assert target_text() == "Hello, world!"
-    assert gui.call_bridge("State", "(s)", (token,)) != "sent"
-    print("PASS: unrelated window invalidates lease even with shared IBus ID", flush=True)
-    editor.close_panel()
-    wait(lambda: shell("!global.get_window_actors().some(a => a.meta_window.get_title() === 'Rime Translator · 长文本')"), "cancelled panel withdrawn before reopening target")
+    wait(lambda: not editor.queued, "send completes for B")
+    wait(lambda: call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "OtherText")[0] == "Translation to B", "B receives translation after editing and settings focus")
+    assert target_text() == expected_translation and editor.text() == ""
+    print("PASS: latest real target B wins; editor and settings fields never become destinations", flush=True)
+    # Select a different field inside A without reopening or losing the draft.
+    call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "First")
     shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
-    wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "original target focused for closed-window test")
+    wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "A focused for same-window field switch")
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token and editor.get_visible(), "new session starts empty")
+    editor.buffer.set_text("同一窗口的第二个输入框")
+    call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "Second")
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Wayland translation target' && global.rimeTestMain.inputMethod.currentFocus !== null && global.rimeTestMain.inputMethod.getSurroundingText()[0] === ''"), "second field inside A receives real text focus")
+    for _ in range(5):
+        pump()
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Rime Translator · 长文本').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Rime Translator · 长文本'"), "panel caret does not replace the second real field")
+    editor.buffer.place_cursor(editor.buffer.get_start_iter())
+    editor.draft.results["mt"] = "Second field translation"
+    editor.send()
+    wait(lambda: not editor.queued, "same-window second field send completed")
+    wait(lambda: call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "SecondText")[0] == "Second field translation", "second field receives translation without changing first field")
+    assert target_text() == expected_translation and editor.text() == ""
+    print("PASS: same-window field retargeting and panel caret isolation", flush=True)
     # Closing the original target invalidates the compositor lease. The draft
     # must be retained and no text may be redirected into the editor/another app.
     token = gui.call_bridge("Open")

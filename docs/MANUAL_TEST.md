@@ -1,4 +1,4 @@
-# Ubuntu 24.04 手动验收（preview11）
+# Ubuntu 24.04 手动验收（preview12）
 
 原生长文本、GUI 设置、历史、快捷键及目标隔离：先按 [长文本验收说明](LONG_TEXT.md) 操作，以下继续覆盖普通候选与离线引擎。
 
@@ -9,7 +9,7 @@
 
 1. 下载对应 GitHub Actions 的 artifact，解压 `.deb` 和 `SHA256SUMS`。
 2. 在 `.deb` 所在目录（artifact 的 `dist/`）运行 `sha256sum --check SHA256SUMS`。
-3. `sudo apt install ./rime-llm-translator_0.3.0~preview11_amd64.deb`。
+3. `sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb`。
 4. 使用桌面普通用户运行 `rime-llm-translator install-offline`，应只校验包内模型，不运行 pip 或联网下载。若 preview5 已空间耗尽，按 [清理方案](UPGRADE_CLEANUP.md) 先处理共享 pip 下载缓存。
 5. 新用户运行 `rime-llm-translator setup`，配置语言、可选 AI 地址及密钥；只用机翻可留空。升级用户改运行 `sync`，保留已有配置与 Key。
 6. `rime-llm-translator enable`。
