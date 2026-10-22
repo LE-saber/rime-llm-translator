@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Rime Translator Settings
+Name[zh_CN]=Rime 翻译设置
+Comment=Configure translation, long-text panel, shortcuts and input history
+Exec=rime-llm-translator settings
+Icon=preferences-desktop-keyboard
+Categories=Settings;Utility;
+Terminal=false
+StartupNotify=true

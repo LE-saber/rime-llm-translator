@@ -57,6 +57,10 @@ def config_default():
                           "offline_timeout_seconds": "15", "offline_idle_seconds": "60",
                           "offline_revision": rime_mt.revision(),
                           "ai_hotkey": DEFAULT_AI_HOTKEY}
+    cfg["panel"] = {"open_hotkey": "Alt+space", "send_hotkey": "Control+Return",
+                    "preferred_language": "en", "auto_ai_send": "false", "theme": "light",
+                    "history_enabled": "true", "width": "900", "height": "420",
+                    "buttons": "copy,paste,symbols,translate,settings"}
     return cfg
 
 def load_config():
@@ -196,6 +200,8 @@ def translate(text, cfg, api_key, opener=None, drafts=None):
     if not choices or not isinstance(choices[0], dict):
         raise ValueError("Missing API choices")
     content = choices[0].get("message", {}).get("content")
+    if choices[0].get("finish_reason") == "length":
+        raise ValueError("Model output exceeded token budget; translation was not sent")
     if not isinstance(content, str):
         raise ValueError("Missing API message content")
     return parse_answer(content, langs)
@@ -337,10 +343,13 @@ def serve(mode="mt"):
         except BlockingIOError:
             raise RuntimeError(mode + " worker is already running")
         worker = Worker(mode)
+        from rime_long_text import PanelWorker
+        panel_worker = PanelWorker(mode, sys.modules[__name__])
         print(APP + ": " + mode + " worker running", flush=True)
         try:
             while True:
-                worker.poll()
+                if not panel_worker.poll():
+                    worker.poll()
                 if mode == "mt":
                     idle = max(5, min(load_config().getfloat("translation", "offline_idle_seconds"), 300))
                     rime_mt.NATIVE.reap_idle(idle)
@@ -541,20 +550,24 @@ def main():
     ap = argparse.ArgumentParser(description="Rime offline MT and hotkey-only AI")
     ap.add_argument("command", choices=["setup", "sync", "enable", "disable", "serve", "serve-ai",
                                         "doctor", "install-offline", "install-runtime", "repair-offline",
-                                        "download-models", "restore-native", "cleanup-legacy", "hotkey"],
+                                        "download-models", "restore-native", "cleanup-legacy", "hotkey",
+                                        "panel", "settings"],
                     help="Action")
     ap.add_argument("binding", nargs="?", help="AI shortcut for hotkey, e.g. Control+Alt+j")
     ap.add_argument("--apply", action="store_true", help="Delete the paths shown by cleanup-legacy")
     ap.add_argument("--pip-cache", action="store_true", help="Include shared ~/.cache/pip downloads")
     ap.add_argument("--argos-models", action="store_true", help="Include shared old Chinese/English/Japanese Argos models")
     args = ap.parse_args()
-    if args.binding is not None and args.command != "hotkey":
+    if args.binding is not None and args.command not in ("hotkey", "panel"):
         ap.error("A shortcut binding requires the hotkey command")
     if args.command != "cleanup-legacy" and (args.apply or args.pip_cache or args.argos_models):
         ap.error("Cleanup flags require cleanup-legacy")
     os.umask(0o077)
     try:
-        if args.command == "setup":
+        if args.command in ("panel", "settings"):
+            from rime_gui import run
+            return run(args.command, args.binding)
+        elif args.command == "setup":
             setup(args)
         elif args.command == "hotkey":
             hotkey(args.binding)

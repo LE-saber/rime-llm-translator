@@ -13,6 +13,7 @@
 #include <rime_api.h>
 #include "rime_engine.h"
 #include "rime_settings.h"
+#include "rime_panel.h"
 
 // TODO:
 #define _(x) (x)
@@ -88,6 +89,17 @@ static void ibus_disconnect_cb(IBusBus *bus, gpointer user_data) {
   ibus_quit();
 }
 
+static IBusEngine* create_engine(IBusFactory* factory, const gchar* name, gpointer unused) {
+  static guint id = 0;
+  if (strcmp(name, "rime-llm")) return NULL;
+  gchar* path = g_strdup_printf("/org/freedesktop/IBus/RimeLLM/%u", ++id);
+  IBusEngine* engine = g_object_new(IBUS_TYPE_RIME_ENGINE, "engine-name", name,
+      "object-path", path, "connection", ibus_service_get_connection((IBusService*)factory),
+      "has-focus-id", TRUE, NULL);
+  g_free(path);
+  return engine;
+}
+
 static void rime_with_ibus() {
   ibus_init();
   IBusBus *bus = ibus_bus_new();
@@ -104,6 +116,7 @@ static void rime_with_ibus() {
   g_object_ref_sink(factory);
 
   ibus_factory_add_engine(factory, "rime-llm", IBUS_TYPE_RIME_ENGINE);
+  g_signal_connect(factory, "create-engine", G_CALLBACK(create_engine), NULL);
   if (!ibus_bus_request_name(bus, "im.rime.LLMTranslator", 0)) {
     g_error("error requesting bus name");
     exit(1);
@@ -122,6 +135,8 @@ static void rime_with_ibus() {
   gboolean full_check = FALSE;
   ibus_rime_start(full_check);
   ibus_rime_load_settings();
+
+  rime_panel_init();
 
   ibus_main();
 

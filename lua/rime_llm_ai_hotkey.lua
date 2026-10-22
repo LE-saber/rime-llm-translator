@@ -29,6 +29,7 @@ local function id_for(text,langs,o)
 end
 local function dispatch(env,o)
   local ctx=env.engine.context
+  if ctx:get_property("rime_llm_panel") == "true" then return false end
   if not ctx:is_composing() or not ctx:has_menu() then return false end
   local candidate=ctx:get_selected_candidate()
   if not candidate or not candidate.text or candidate.text=="" then return false end
@@ -125,6 +126,10 @@ end
 
 return function(key, env)
   if not key then return 2 end
+  if env.engine.context:get_property("rime_llm_panel") == "true" then
+    env.alt_tap=nil
+    return 2
+  end
   -- Private in-process refresh from our IBus frontend's GLib main loop.
   -- No OS key is injected, and no translation request is generated here.
   if key.keycode == 0xffffff then

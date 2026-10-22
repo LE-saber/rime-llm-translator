@@ -4,6 +4,7 @@
 #include <rime_api.h>
 #include "rime_engine.h"
 #include "rime_settings.h"
+#include "rime_panel.h"
 
 // TODO:
 #define _(x) (x)
@@ -41,6 +42,8 @@ static gboolean ibus_rime_engine_process_key_event (IBusEngine *engine,
                                                     guint modifiers);
 static void ibus_rime_engine_focus_in (IBusEngine *engine);
 static void ibus_rime_engine_focus_out (IBusEngine *engine);
+static void focus_in_id(IBusEngine* engine, const gchar* path, const gchar* client);
+static void focus_out_id(IBusEngine* engine, const gchar* path);
 static void ibus_rime_engine_reset (IBusEngine *engine);
 static void ibus_rime_engine_enable (IBusEngine *engine);
 static void ibus_rime_engine_disable (IBusEngine *engine);
@@ -151,6 +154,8 @@ ibus_rime_engine_class_init (IBusRimeEngineClass *klass)
   engine_class->process_key_event = ibus_rime_engine_process_key_event;
   engine_class->focus_in = ibus_rime_engine_focus_in;
   engine_class->focus_out = ibus_rime_engine_focus_out;
+  engine_class->focus_in_id = focus_in_id;
+  engine_class->focus_out_id = focus_out_id;
   engine_class->reset = ibus_rime_engine_reset;
   engine_class->enable = ibus_rime_engine_enable;
   engine_class->disable = ibus_rime_engine_disable;
@@ -225,11 +230,20 @@ ibus_rime_engine_init (IBusRimeEngine *rime_engine)
                            NULL);
   ibus_prop_list_append(rime_engine->props, prop);
   rime_engine->refresh_timer = g_timeout_add(100, refresh_translation, rime_engine);
+  label = ibus_text_new_from_static_string("长文本翻译");
+  prop = ibus_property_new("LongText", PROP_TYPE_NORMAL, label, "", label,
+                           TRUE, TRUE, PROP_STATE_UNCHECKED, NULL);
+  ibus_prop_list_append(rime_engine->props, prop);
+  label = ibus_text_new_from_static_string("翻译设置");
+  prop = ibus_property_new("TranslatorSettings", PROP_TYPE_NORMAL, label, "", label,
+                           TRUE, TRUE, PROP_STATE_UNCHECKED, NULL);
+  ibus_prop_list_append(rime_engine->props, prop);
 }
 
 static void
 ibus_rime_engine_destroy (IBusRimeEngine *rime_engine)
 {
+  rime_panel_destroy((IBusEngine*)rime_engine);
   if (rime_engine->refresh_timer) {
     g_source_remove(rime_engine->refresh_timer);
     rime_engine->refresh_timer = 0;
@@ -281,6 +295,24 @@ ibus_rime_engine_focus_out (IBusEngine *engine)
   IBusRimeEngine* self = (IBusRimeEngine*)engine;
   self->focused = FALSE;
   ++self->shortcut_epoch;
+  rime_panel_blur(engine);
+}
+
+RimeSessionId rime_engine_session(IBusEngine* engine) {
+  return ((IBusRimeEngine*)engine)->session_id;
+}
+
+static void focus_in_id(IBusEngine* engine, const gchar* path, const gchar* client) {
+  IBusRimeEngine* self = (IBusRimeEngine*)engine;
+  if (!self->session_id) ibus_rime_create_session(self);
+  rime_panel_focus(engine, path, client);
+  rime_api->set_property(self->session_id, "rime_llm_panel",
+      g_str_has_suffix(client, ":rime-llm-panel") ? "true" : "false");
+  ibus_rime_engine_focus_in(engine);
+}
+
+static void focus_out_id(IBusEngine* engine, const gchar* path) {
+  ibus_rime_engine_focus_out(engine);
 }
 
 static void
@@ -596,7 +628,8 @@ ibus_rime_engine_process_key_event (IBusEngine *engine,
                                     guint       modifiers)
 {
   IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
-  // ignore super key
+  if (rime_panel_key(engine, keyval, modifiers)) return TRUE;
+  // Unbound Super shortcuts belong to the desktop.
   if (modifiers & IBUS_SUPER_MASK) {
     ++rime_engine->shortcut_epoch;
     return FALSE;
@@ -632,7 +665,13 @@ static void ibus_rime_engine_property_activate (IBusEngine *engine,
   extern void ibus_rime_start(gboolean full_check);
   extern void ibus_rime_stop();
   IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
-  if (!strcmp("deploy", prop_name)) {
+  if (!strcmp("LongText", prop_name)) {
+    rime_panel_open(engine);
+  }
+  else if (!strcmp("TranslatorSettings", prop_name)) {
+    g_spawn_command_line_async("/usr/bin/rime-llm-translator settings", NULL);
+  }
+  else if (!strcmp("deploy", prop_name)) {
     ibus_rime_stop();
     ibus_rime_start(TRUE);
     ibus_rime_engine_update(rime_engine);

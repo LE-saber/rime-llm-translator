@@ -86,6 +86,8 @@ local function current_source(first, env)
 end
 
 local function enrich(first, env)
+  if env and env.engine and env.engine.context and
+      env.engine.context:get_property("rime_llm_panel") == "true" then return end
   if not home or home == "" then return end
   local opts = config()
   if (opts["translation.enabled"] or "false"):lower() ~= "true" then return end

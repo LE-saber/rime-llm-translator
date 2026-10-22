@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.3.0~preview9}"
+VERSION="${VERSION:-0.3.0~preview10}"
 ARCH="$(dpkg --print-architecture)"
 PACKAGE="rime-llm-translator"
 bash packaging/build-mt.sh
@@ -13,13 +13,16 @@ mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/bin" \
  "$ROOT/usr/lib/systemd/user" "$ROOT/usr/share/ibus/component" \
  "$ROOT/usr/libexec/rime-llm-translator" "$ROOT/usr/share/doc/$PACKAGE/frontend" dist
 cc -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
- frontend/rime_main.c frontend/rime_engine.c frontend/rime_settings.c \
+ frontend/rime_main.c frontend/rime_engine.c frontend/rime_settings.c frontend/rime_panel.c \
  $(pkg-config --cflags --libs ibus-1.0 libnotify rime) \
  -o "$ROOT/usr/libexec/rime-llm-translator/ibus-engine-rime-llm"
 install -m 0644 packaging/rime-llm.xml "$ROOT/usr/share/ibus/component/rime-llm.xml"
 install -m 0644 frontend/* "$ROOT/usr/share/doc/$PACKAGE/frontend/"
 install -m 0755 src/rime_llm_translator.py "$ROOT/usr/bin/rime-llm-translator"
 install -m 0644 src/rime_mt.py "$ROOT/usr/share/rime-llm-translator/"
+install -m 0644 src/rime_long_text.py src/rime_gui.py src/rime_llm_translator.py "$ROOT/usr/share/rime-llm-translator/"
+mkdir -p "$ROOT/usr/share/applications"
+install -m 0644 packaging/rime-llm-settings.desktop "$ROOT/usr/share/applications/"
 install -m 0755 .build/mt/rime-mt "$ROOT/usr/libexec/rime-llm-translator/"
 install -m 0644 native/mt/models.lock.json "$ROOT/usr/share/rime-llm-translator/"
 mkdir -p "$ROOT/usr/share/rime-llm-translator/models"
@@ -59,7 +62,7 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $INSTALLED_SIZE
 Maintainer: LE-saber <noreply@github.com>
-Depends: python3 (>= 3.11), python3-yaml, ibus-rime, librime-plugin-lua, rime-data-luna-pinyin, libibus-1.0-5, librime1 (>= 1.10.0), libnotify4, libglib2.0-0t64, libc6 (>= 2.38), libstdc++6, libopencc1.1
+Depends: python3 (>= 3.11), python3-yaml, python3-gi, gir1.2-gtk-3.0, gir1.2-ibus-1.0, ibus-gtk3, ibus-rime, librime-plugin-lua, rime-data-luna-pinyin, libibus-1.0-5, librime1 (>= 1.10.0), libnotify4, libglib2.0-0t64, libc6 (>= 2.38), libstdc++6, libopencc1.1
 Description: Offline machine translation and optional AI candidates for IBus Rime
  CPU-only native Bergamot with bundled Chinese-English-Japanese INT8 models.
  No pip installation or first-run model downloads. Optional manual AI correction.
