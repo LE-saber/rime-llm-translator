@@ -191,6 +191,7 @@ try:
     wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "A focused for same-window field switch")
     token = gui.call_bridge("Open")
     wait(lambda: editor.token == token and editor.get_visible(), "new session starts empty")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Rime Translator · 长文本'"), "panel mapping settled before selecting second field")
     editor.buffer.set_text("同一窗口的第二个输入框")
     call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "Second")
     shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
