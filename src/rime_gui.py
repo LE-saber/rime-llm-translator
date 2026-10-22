@@ -7,6 +7,10 @@ import time
 
 # Force a distinguishable IBus client, also when GNOME defaults to Wayland IM.
 os.environ["GTK_IM_MODULE"] = "ibus"
+# Xwayland utility windows honor skip-taskbar/pager hints on GNOME 46 too.
+# The original application may remain native Wayland; Shell owns submission.
+if os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY"):
+    os.environ["GDK_BACKEND"] = "x11"
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -90,13 +94,25 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.set_default_size(max(600, min(self.cfg.getint("panel", "width"), 1800)),
                               max(320, min(self.cfg.getint("panel", "height"), 1200)))
         self.set_size_request(600, 320)
+        self.set_decorated(False)
+        self.set_keep_above(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
         self.set_position(Gtk.WindowPosition.CENTER)
         self.connect("delete-event", self.close_panel)
         self.connect("focus-out-event", lambda *_: self.taps.reset())
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=14)
         self.add(box)
         heading = Gtk.Box(spacing=12)
-        heading.pack_start(Gtk.Label(label="长文本翻译", xalign=0), True, True, 0)
+        drag = Gtk.EventBox()
+        drag.add(Gtk.Label(label="长文本翻译 · 拖动移动", xalign=0))
+        drag.connect("button-press-event", self.move_panel)
+        heading.pack_start(drag, True, True, 0)
+        close = Gtk.Button(label="×")
+        close.set_tooltip_text("收起面板，保留草稿")
+        close.connect("clicked", self.close_panel)
+        heading.pack_end(close, False, False, 0)
         self.theme = Gtk.Button(label="日间 / 夜间")
         self.theme.connect("clicked", self.toggle_theme)
         heading.pack_end(self.theme, False, False, 0)
@@ -141,11 +157,29 @@ class EditorWindow(Gtk.ApplicationWindow):
         box.pack_start(toolbar, False, False, 0)
         self.message = Gtk.Label(label="实时预览使用机翻；AI 仅手动触发", xalign=0, wrap=True)
         box.pack_start(self.message, False, False, 0)
+        grip = Gtk.EventBox(halign=Gtk.Align.END)
+        grip.add(Gtk.Label(label="◢"))
+        grip.set_tooltip_text("拖动调整大小")
+        grip.connect("button-press-event", self.resize_panel)
+        box.pack_end(grip, False, False, 0)
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.connect("button-press-event", self.mouse_shortcut)
         self.refresh_config()
         self.buffer.set_text(self.saved_text)
         GLib.timeout_add(120, self.poll)
+
+    def move_panel(self, _, event):
+        if event.button == 1:
+            self.begin_move_drag(1, int(event.x_root), int(event.y_root), event.time)
+            return True
+        return False
+
+    def resize_panel(self, _, event):
+        if event.button == 1:
+            self.begin_resize_drag(Gdk.WindowEdge.SOUTH_EAST, 1,
+                                   int(event.x_root), int(event.y_root), event.time)
+            return True
+        return False
 
     @staticmethod
     def scrolled(widget):
@@ -218,8 +252,8 @@ class EditorWindow(Gtk.ApplicationWindow):
                 (core.CACHE_DIR / "panel-open").unlink(missing_ok=True)
             state = call_bridge("State", "(s)", (token,))
             self.target_supported = state != "unsupported"
-            self.show_message("此 Wayland 目标不能可靠识别：可编辑翻译并复制译文；直接发送需独立 IBus 上下文"
-                              if state == "unsupported" else "选词先进入原文；发送后请回到原输入框（8 秒内）")
+            self.show_message("GNOME 桌面桥接未启用：运行 sync 和 enable 后注销再登录"
+                              if state == "unsupported" else "选词先进入原文；发送时自动返回原输入框")
         except (OSError, GLib.Error):
             self.show_message("未绑定输入框。请在 Rime Translator 输入框中用快捷键或菜单打开")
         self.hidden_at = None
@@ -229,7 +263,7 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.changed()
         if not self.target_supported:
             self.send_button.set_sensitive(False)
-            self.show_message("此目标共享 Wayland 输入上下文，不能直接发送。请在译文上右键复制；原文已保留")
+            self.show_message("请运行 rime-llm-translator sync && rime-llm-translator enable，注销再登录以启用桌面桥接")
         else:
             self.send_button.set_sensitive(True)
 
@@ -314,7 +348,11 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.remember()
         self.queued = True
         self.hide()
-        self.show_message("请在 8 秒内回到原输入框；切换其他输入框会取消发送")
+        try:
+            call_bridge("Restore", "(s)", (self.token,))
+        except GLib.Error:
+            pass  # Independent IBus contexts can still be focused manually.
+        self.show_message("正在返回原输入框并发送译文")
 
     def poll(self):
         if self.queued:

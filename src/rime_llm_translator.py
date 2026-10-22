@@ -474,6 +474,8 @@ def install_user_files():
     shutil.copy2(LUA_SOURCE, RIME_DIR / "lua/rime_llm_translator.lua")
     if HOTKEY_SOURCE.exists():
         shutil.copy2(HOTKEY_SOURCE, RIME_DIR / "lua/rime_llm_ai_hotkey.lua")
+    import rime_shell
+    rime_shell.install()
     # Do NOT patch a working input method during setup/sync.
 
 def sync():
@@ -521,6 +523,8 @@ def setup(args):
     print("Rime Translator refreshes translation candidates automatically while focused.")
 
 def doctor():
+    import rime_shell
+    print("GNOME floating-panel bridge:", rime_shell.status())
     print("Configuration:", CONFIG_PATH, CONFIG_PATH.is_file())
     print("API key:", "configured" if KEY_PATH.is_file() else "missing")
     print("Lua plugin:", (RIME_DIR / "lua/rime_llm_translator.lua").is_file())

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.3.0~preview10}"
+VERSION="${VERSION:-0.3.0~preview11}"
 ARCH="$(dpkg --print-architecture)"
 PACKAGE="rime-llm-translator"
 bash packaging/build-mt.sh
@@ -20,7 +20,9 @@ install -m 0644 packaging/rime-llm.xml "$ROOT/usr/share/ibus/component/rime-llm.
 install -m 0644 frontend/* "$ROOT/usr/share/doc/$PACKAGE/frontend/"
 install -m 0755 src/rime_llm_translator.py "$ROOT/usr/bin/rime-llm-translator"
 install -m 0644 src/rime_mt.py "$ROOT/usr/share/rime-llm-translator/"
-install -m 0644 src/rime_long_text.py src/rime_gui.py src/rime_llm_translator.py "$ROOT/usr/share/rime-llm-translator/"
+install -m 0644 src/rime_long_text.py src/rime_gui.py src/rime_shell.py src/rime_llm_translator.py "$ROOT/usr/share/rime-llm-translator/"
+mkdir -p "$ROOT/usr/share/rime-llm-translator/gnome-extension"
+install -m 0644 gnome-extension/* "$ROOT/usr/share/rime-llm-translator/gnome-extension/"
 mkdir -p "$ROOT/usr/share/applications"
 install -m 0644 packaging/rime-llm-settings.desktop "$ROOT/usr/share/applications/"
 install -m 0755 .build/mt/rime-mt "$ROOT/usr/libexec/rime-llm-translator/"

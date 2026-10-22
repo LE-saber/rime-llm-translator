@@ -1,11 +1,11 @@
-# 原生长文本模式（preview10）
+# 原生长文本模式（preview11）
 
 Ubuntu 24.04 amd64，IBus / 朙月拼音。安装包使用系统 GTK3，按需启动窗口；网页原型仍只在本地保留。没有 Electron、浏览器运行时或新增 Python 虚拟环境。
 
 ## 升级与打开
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview10_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview11_amd64.deb
 rime-llm-translator sync && rime-llm-translator enable
 systemctl --user restart rime-llm-translator.service rime-llm-ai.service
 rime-llm-translator settings
@@ -20,7 +20,7 @@ rime-llm-translator settings
 - 实时预览只走离线机翻；英语 / 日语以外的目标语言需要手动 AI，绝不会自动联网补齐。
 - “AI 翻译”或配置的 AI 快捷键只处理当前版本与语言。继续编辑、切换语言或成功发送后恢复机翻，不会延续自动 AI 状态。
 - 默认 Ctrl+Enter / “发送译文”只提交译文。若 AI 正在处理当前版本，会等待或复用该请求。开启“发送自动 AI 翻译”后，每次发送都必须取得当前版本的 AI 结果。失败、过期或原文修改都不会用机翻或旧译文代替。
-- 发送后面板收起，等待原目标重新获得焦点；桌面没有自动恢复时，在 **8 秒内点回原输入框**。切到其他输入上下文、目标失效或等待超时会取消提交、重新显示原文。不会模拟全局粘贴，也不会发送中文原文。
+- 发送后面板收起，GNOME 桥接自动恢复原目标焦点并提交译文。其他桌面使用独立 IBus 上下文时仍可在 **8 秒内点回原输入框**。切到其他输入上下文、目标失效或等待超时会取消提交、重新显示原文。不会模拟全局粘贴，也不会发送中文原文。
 - 长文本上限 **32 KiB UTF-8**，超限明确拒绝，不截断。按段落和字节预算分块，保留换行、顺序和末尾；云端模型达到 token 上限的回复也拒绝发送。分块可影响上下文连贯性，发送前应检查右侧全文。
 
 ## 设置与记录
@@ -33,9 +33,9 @@ GUI 可设置目标语言、优先预览语言、API、模型、超时、密钥�
 
 ## 桌面支持边界
 
-当前实现是**独立可缩放 GTK 面板**，还未把编辑区嵌入 GNOME Shell 的系统候选面板；Wayland 不支持任意外部窗口坐标定位。候选框由系统在面板内的编辑光标旁显示，不能保证网页示意中的跨应用夹层位置。
+长文本是**无系统标题栏、可拖动缩放的置顶悬浮面板**，不在任务栏 / Alt-Tab 列出。拖动顶栏移动，右下角拖动缩放，× 收起并保存草稿。GNOME 46 Wayland 下通过 Xwayland utility 窗口提示隐藏普通窗口入口，原应用仍可使用原生 Wayland。候选框跟随面板编辑光标，尚未嵌入系统候选栏。
 
-直接发送依赖 IBus `FocusInId` 提供的输入上下文。**GNOME Wayland 的 `gnome-shell` / `fake` 共享上下文不允许直接提交**，面板会提示并禁用发送，可在译文中选择文本后右键复制。需要直接发送时，可用 Ubuntu on Xorg，或在受支持的 GTK 应用启动环境中显式设置 `GTK_IM_MODULE=ibus`；不要为所有应用盲目全局设置。GNOME / 虚拟机宿主可能提前截获快捷键，实际拦截情况仍需在用户 VM 验收。接口依据：[IBus 源码 FocusInId 文档](https://github.com/ibus/ibus/blob/1.5.29/src/ibusengine.c)。
+preview11 随包提供 GNOME 46 扩展 `rime-llm-translator@le-saber`。sync / enable 复制到当前用户扩展目录并启用，首次加载或更新后须注销再登录。`doctor` 中 GNOME floating-panel bridge 应为 active。扩展在打开前记录原应用窗口；发送时恢复它，在同一 Shell 主循环内验证目标和文本焦点后提交。切到其他应用、关闭目标、锁屏或输入框 / 光标上下文改变会取消提交。不会通过共享 IBus 上下文盲目发送，不用剪贴板或模拟粘贴。扩展未运行时共享上下文仍拒绝发送，并明确提示启用步骤；独立 IBus 上下文继续可用。GNOME / 虚拟机宿主可能提前截获快捷键，实际拦截情况仍需在用户 VM 验收。接口依据：[IBus 源码 FocusInId 文档](https://github.com/ibus/ibus/blob/1.5.29/src/ibusengine.c)。
 
 ## 验收重点
 
@@ -44,7 +44,7 @@ GUI 可设置目标语言、优先预览语言、API、模型、超时、密钥�
 3. 断网验证机翻。恢复网络后手动 AI，随后改一个字，预览应回到机翻且不再请求 AI。
 4. 分别关闭 / 开启“发送自动 AI 翻译”；开启时断网发送应失败并保留原文，不能降级发送机翻。
 5. 等待 AI 时修改原文或切换语言，不应发送或显示旧译文；当前 AI 未完成时连续点击发送不应重复请求。
-6. 发送并点回原输入框，只收到一次译文。另测切到其他输入框、关闭原应用及超过 8 秒，均保留草稿并取消发送。共享 Wayland 目标应明确禁用直接发送。
+6. 在原生 Wayland 应用打开面板，发送后应自动返回原输入框且只收到一次译文。另测切到其他应用、关闭原应用及超过 8 秒，均保留草稿并取消发送。检查置顶、拖动、缩放及不出现在 Alt-Tab；禁用桌面桥接后共享上下文应拒绝发送。
 7. 设置中录制 AI 双击 Alt、发送鼠标侧键，检查冲突；同时保留普通候选 AI 与繁体能力。检查历史回溯、明暗主题、按钮显隐及升级保留密钥。
 
 CI 在 GitHub Ubuntu 24.04 上覆盖单元测试、真实 Rime、真实 IBus、GTK 编辑器、目标隔离、原生模型和本地模拟 API。真实云端质量、虚拟机桌面焦点及 Wayland / Xorg 外观由用户手动验收；不使用 WSL。
@@ -52,3 +52,5 @@ CI 在 GitHub Ubuntu 24.04 上覆盖单元测试、真实 Rime、真实 IBus、G
 ## 清理与回退
 
 原先的 `cleanup-legacy` 流程继续有效，不会删除配置、密钥、Rime 词库和新草稿。若只清理面板记录，在 GUI 中清空历史；若要同时丢弃草稿，退出面板后仅删除 `~/.config/rime-llm-translator/long-text.json`。不要删除整个 `.config/ibus`。临时面板任务在 `~/.cache/rime-llm-translator/panel-*`，退出面板并停止服务后可单独清理，保留现有 `api_key`、`config.ini` 及词库。
+
+若需停用桌面桥接：`gnome-extensions disable rime-llm-translator@le-saber`，之后直接发送到共享 Wayland 上下文会不可用。卸载软件后如需清理其用户副本，只删除 `~/.local/share/gnome-shell/extensions/rime-llm-translator@le-saber`，不影响其他扩展。

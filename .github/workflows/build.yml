@@ -18,7 +18,7 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev
+          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev gnome-shell xwayland libgl1-mesa-dri
       - uses: actions/cache@v4
         id: mt-cache
         with:
@@ -101,6 +101,19 @@ jobs:
           OPENBLAS_NUM_THREADS: 1
           OMP_NUM_THREADS: 1
         run: python3 tests/smoke_native.py
+      - name: Real GNOME 46 Wayland send and floating panel
+        timeout-minutes: 4
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+          XDG_SESSION_TYPE: wayland
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GNOME_SHELL_SESSION_MODE: user
+        run: |
+          export HOME="$RUNNER_TEMP/gnome-home"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/gnome-runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 180s dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' /usr/bin/python3 tests/gnome_wayland.py
       - name: Real offline models and resource report (network disabled)
         timeout-minutes: 8
         run: |
@@ -121,6 +134,7 @@ jobs:
             dist/RESOURCE_REPORT.md
             dist/mt-benchmark.json
             dist/native-*.png
+            dist/gnome-wayland.log
           if-no-files-found: error
           retention-days: 30
       - name: Publish tagged release

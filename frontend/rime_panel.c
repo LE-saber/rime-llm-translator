@@ -9,6 +9,8 @@ extern RimeSessionId rime_engine_session(IBusEngine* engine);
 
 #define BRIDGE "im.rime.LLMTranslator.Bridge"
 #define PATH "/im/rime/LLMTranslator/Bridge"
+#define SHELL "im.rime.LLMTranslator.Shell"
+#define SHELL_PATH "/im/rime/LLMTranslator/Shell"
 static GDBusConnection* connection;
 static IBusBus* ibus;
 static guint focus_epoch;
@@ -18,22 +20,56 @@ static const gchar* status = "closed";
 static gint64 expires;
 static gint64 alt_down, alt_last;
 static guint alt_count;
+static gboolean shell_target, shell_busy;
+
+static void shell_call(const char* method, GVariant* args,
+                       GAsyncReadyCallback callback, gpointer data) {
+  g_dbus_connection_call(connection, SHELL, SHELL_PATH, SHELL, method, args,
+                         NULL, G_DBUS_CALL_FLAGS_NO_AUTO_START, 1500, NULL, callback, data);
+}
 
 static void cancel(void) {
+  if (shell_target && token)
+    shell_call("End", g_variant_new("(s)", token), NULL, NULL);
   g_clear_pointer(&pending, g_free);
   status = "cancelled";
+}
+
+static void shell_sent(GObject* object, GAsyncResult* result, gpointer data) {
+  gchar* requested = data;
+  GError* error = NULL;
+  GVariant* reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(object), result, &error);
+  if (!g_strcmp0(token, requested)) {
+    shell_busy = FALSE;
+    if (pending) {
+      const gchar* state = "failed";
+      if (reply) g_variant_get(reply, "(&s)", &state);
+      if (!strcmp(state, "sent")) {
+        g_clear_pointer(&pending, g_free);
+        status = "sent";
+      } else if (strcmp(state, "waiting")) cancel();
+    }
+  }
+  g_clear_pointer(&reply, g_variant_unref); g_clear_error(&error); g_free(requested);
 }
 
 static gboolean submit(gpointer unused) {
   if (!pending) return G_SOURCE_CONTINUE;
   if (g_get_monotonic_time() > expires) {
-    g_clear_pointer(&pending, g_free);
+    cancel();
     status = "expired";
   } else if (focused && !g_strcmp0(focus_id, target_id)) {
     /* Initial IBus FocusId discovery is asynchronous. Require a confirmed
        FocusInId after the editor yields focus, never submit using a guess. */
     if (!g_strcmp0(focus_client, "unknown")) return G_SOURCE_CONTINUE;
     if (!g_strcmp0(focus_client, "gnome-shell") || !g_strcmp0(focus_client, "fake")) {
+      if (shell_target) {
+        if (!shell_busy && !strcmp(focus_client, "gnome-shell")) {
+          shell_busy = TRUE;
+          shell_call("Submit", g_variant_new("(ss)", token, pending), shell_sent, g_strdup(token));
+        }
+        return G_SOURCE_CONTINUE;
+      }
       cancel(); status = "unsupported";
       return G_SOURCE_CONTINUE;
     }
@@ -96,6 +132,22 @@ void rime_panel_destroy(IBusEngine* engine) {
   rime_panel_blur(engine);
 }
 
+static void shell_begin(GObject* object, GAsyncResult* result, gpointer data) {
+  gchar* requested = data;
+  GError* error = NULL;
+  GVariant* reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(object), result, &error);
+  if (!g_strcmp0(token, requested) && !strcmp(status, "opening")) {
+    shell_target = FALSE;
+    if (reply) g_variant_get(reply, "(b)", &shell_target);
+    status = (!shell_target && (!g_strcmp0(focus_client, "gnome-shell") ||
+                               !g_strcmp0(focus_client, "fake"))) ? "unsupported" : "editing";
+    gchar* argv[] = {"/usr/bin/rime-llm-translator", "panel", token, NULL};
+    if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, NULL, NULL))
+      status = "failed";
+  }
+  g_clear_pointer(&reply, g_variant_unref); g_clear_error(&error); g_free(requested);
+}
+
 void rime_panel_open(IBusEngine* engine) {
   if (!connection || !focused || !focus_id ||
       g_str_has_suffix(focus_client, ":rime-llm-panel")) return;
@@ -106,9 +158,8 @@ void rime_panel_open(IBusEngine* engine) {
   g_free(target_id); target_id = g_strdup(focus_id);
   g_free(token); token = g_uuid_string_random();
   g_clear_pointer(&peer, g_free);
-  /* Generic shell contexts are shared across foreign applications on Wayland. */
-  status = (!g_strcmp0(focus_client, "gnome-shell") || !g_strcmp0(focus_client, "fake"))
-           ? "unsupported" : "editing";
+  shell_target = FALSE; shell_busy = FALSE;
+  status = "opening";
   RimeSessionId session = rime_engine_session(engine);
   RIME_STRUCT(RimeContext, ctx);
   const char* seed = "";
@@ -133,13 +184,9 @@ void rime_panel_open(IBusEngine* engine) {
   rime_api->clear_composition(session);
   ibus_engine_hide_preedit_text(engine);
   ibus_engine_hide_lookup_table(engine);
-  gchar* argv[] = {"/usr/bin/rime-llm-translator", "panel", token, NULL};
-  GError* error = NULL;
-  if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, NULL, &error)) {
-    status = "failed";
-    g_warning("Cannot start long-text editor: %s", error->message);
-    g_error_free(error);
-  }
+  /* Capture the real application before GTK can steal focus. No synchronous
+     call into Shell while Shell may itself be waiting for IBus key handling. */
+  shell_call("Begin", g_variant_new("(s)", token), shell_begin, g_strdup(token));
 }
 
 gboolean rime_panel_key(IBusEngine* engine, guint keyval, guint state) {
@@ -214,7 +261,12 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
     return;
   }
   if (!peer) peer = g_strdup(sender);
-  if (!strcmp(name, "Queue")) {
+  if (!strcmp(name, "Restore")) {
+    if (pending && shell_target) {
+      shell_busy = TRUE;
+      shell_call("Restore", g_variant_new("(s)", token), shell_sent, g_strdup(token));
+    }
+  } else if (!strcmp(name, "Queue")) {
     if (strcmp(status, "editing") || !*text || strlen(text) > 262144 || !g_utf8_validate(text, -1, NULL)) {
       g_dbus_method_invocation_return_dbus_error(invocation, BRIDGE ".NotReady", "Target unavailable or send already queued");
       return;
@@ -233,6 +285,7 @@ void rime_panel_init(IBusBus* bus) {
     "<method name='Open'><arg type='s' direction='out'/></method>"
     "<method name='State'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Cancel'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
+    "<method name='Restore'><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "<method name='Queue'><arg type='s' direction='in'/><arg type='s' direction='in'/><arg type='s' direction='out'/></method>"
     "</interface></node>";
   GError* error = NULL;
