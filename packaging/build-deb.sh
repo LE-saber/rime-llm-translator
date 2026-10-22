@@ -51,7 +51,7 @@ install -m 0644 packaging/rime-llm-translator.service \
  "$ROOT/usr/lib/systemd/user/rime-llm-translator.service"
 install -m 0644 packaging/rime-llm-ai.service \
  "$ROOT/usr/lib/systemd/user/rime-llm-ai.service"
-install -m 0644 README_CN.md README.md docs/UPGRADE_CLEANUP.md docs/MANUAL_TEST.md "$ROOT/usr/share/doc/$PACKAGE/"
+install -m 0644 README_CN.md README.md docs/UPGRADE_CLEANUP.md docs/MANUAL_TEST.md docs/LONG_TEXT.md "$ROOT/usr/share/doc/$PACKAGE/"
 install -m 0644 frontend/LICENSE "$ROOT/usr/share/doc/$PACKAGE/copyright"
 INSTALLED_SIZE="$(du -sk "$ROOT/usr" | cut -f 1)"
 cat > "$ROOT/DEBIAN/control" <<EOF

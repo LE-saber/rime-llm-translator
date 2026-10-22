@@ -92,8 +92,10 @@ def parse_languages(raw):
     return result
 
 def normalize_hotkey(raw):
-    if raw.strip().lower() == "doublealt":
-        return "DoubleAlt"
+    if raw.strip().lower() in ("doublealt", "triplealt"):
+        return "DoubleAlt" if raw.strip().lower() == "doublealt" else "TripleAlt"
+    if re.fullmatch(r"(?:(?:Control|Alt|Shift|Super)\+)*Button(?:8|9)", raw.strip()):
+        return raw.strip()
     parts = [part.strip() for part in raw.split("+")]
     aliases = {"ctrl": "Control", "control": "Control", "shift": "Shift",
                "alt": "Alt", "super": "Super"}
@@ -118,8 +120,11 @@ def hotkey(binding=None):
         if os.geteuid() == 0:
             raise RuntimeError("Run hotkey as your normal Ubuntu user, without sudo")
         cfg["translation"]["ai_hotkey"] = value
+        from rime_long_text import validate_shortcuts
+        validate_shortcuts({"ai": value, "open": cfg["panel"]["open_hotkey"],
+                            "send": cfg["panel"]["send_hotkey"]})
         save_config(cfg)
-    print("AI shortcut:", value)
+    print("AI shortcut:", value, "(panel only)" if "Button" in value else "")
     if binding is not None:
         print("Effective immediately with the current frontend and Lua plugin loaded; no service restart needed.")
         print("After upgrading: run sync and log out/in once to load the new frontend and plugin.")

@@ -86,7 +86,10 @@ local function double_alt(key,env,o)
       return nil,true
     end
     state.down=nil
-    if state.first and state.key==key.keycode and now-state.first<=400 then
+    state.count = (state.first and state.key==key.keycode and now-state.first<=400)
+        and (state.count or 1)+1 or 1
+    local wanted = o["translation.ai_hotkey"]=="TripleAlt" and 3 or 2
+    if state.count>=wanted then
       env.alt_tap=nil
       return o
     end
@@ -108,7 +111,9 @@ end
 
 local function matching_config(key,env)
   local o=config()
-  if o["translation.ai_hotkey"]=="DoubleAlt" then return double_alt(key,env,o) end
+  if o["translation.ai_hotkey"]=="DoubleAlt" or o["translation.ai_hotkey"]=="TripleAlt" then
+    return double_alt(key,env,o)
+  end
   env.alt_tap=nil
   if key:release() then return nil end
   local shortcut=KeyEvent(o["translation.ai_hotkey"] or "Control+Shift+Return")

@@ -115,6 +115,7 @@ jobs:
             README_CN.md
             docs/MANUAL_TEST.md
             docs/UPGRADE_CLEANUP.md
+            docs/LONG_TEXT.md
             dist/RESOURCE_REPORT.md
             dist/mt-benchmark.json
           if-no-files-found: error

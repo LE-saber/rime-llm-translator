@@ -10,6 +10,7 @@ import time
 os.environ["GTK_IM_MODULE"] = "ibus"
 import gi
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
 gi.require_version("IBus", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
@@ -75,6 +76,7 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.cfg = core.load_config()
         self.draft = Draft()
         self.token, self.queued, self.send_mode = None, False, None
+        self.target_supported = True
         self.hidden_at, self.debounce = None, 0
         self.taps = TapMatcher()
         try:
@@ -208,6 +210,7 @@ class EditorWindow(Gtk.ApplicationWindow):
             if raw[0] == token:
                 (core.CACHE_DIR / "panel-open").unlink(missing_ok=True)
             state = call_bridge("State", "(s)", (token,))
+            self.target_supported = state != "unsupported"
             self.show_message("此 Wayland 目标不能可靠识别：可编辑翻译并复制译文；直接发送需独立 IBus 上下文"
                               if state == "unsupported" else "选词先进入原文；发送后请回到原输入框（8 秒内）")
         except (OSError, GLib.Error):
@@ -217,6 +220,11 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.present()
         self.source.grab_focus()
         self.changed()
+        if not self.target_supported:
+            self.send_button.set_sensitive(False)
+            self.show_message("此目标共享 Wayland 输入上下文，不能直接发送。请在译文上右键复制；原文已保留")
+        else:
+            self.send_button.set_sensitive(True)
 
     def changed(self, *_):
         if not hasattr(self, "languages"):
@@ -592,11 +600,11 @@ class Recorder(Gtk.Dialog):
             self.response(Gtk.ResponseType.CANCEL)
             return True
         name = Gdk.keyval_name(event.keyval)
-        if self.down is not None:
-            self.down = -1  # held modifier/autorepeat is not another tap
-        elif name in ("Alt_L", "Alt_R"):
-            self.down = time.monotonic()
+        if name in ("Alt_L", "Alt_R"):
+            self.down = time.monotonic() if self.down is None else -1
         else:
+            self.down = None
+            self.count = 0
             binding = key_binding(event)
             if binding and "+" in binding:
                 self.choose(binding)

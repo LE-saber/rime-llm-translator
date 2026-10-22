@@ -1,15 +1,17 @@
 # Rime LLM Translator — lightweight offline MT + explicit AI
 
-Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview9` uses native CPU-only Bergamot and bundled Mozilla INT8 models, with configurable AI shortcuts including double Alt. No pip, compilation or first-run model download on the user's machine.
+Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview10` uses native CPU-only Bergamot and bundled Mozilla INT8 models, with configurable AI shortcuts including double Alt. No pip, compilation or first-run model download on the user's machine.
 
 Normal typing produces offline English/Japanese drafts. The AI shortcut (default **Ctrl+Shift+Enter**) explicitly sends the original Chinese and available drafts to the configured DeepSeek / OpenAI-compatible API for revision. An API key is optional. MT never uploads input or automatically falls back to cloud AI.
 
 ## Install
 
+preview10 adds an on-demand GTK3 long-text editor, GUI settings, private history, and optional AI-on-send. See [long-text behavior and acceptance](docs/LONG_TEXT.md). The editor is a separate resizable window; shared GNOME Wayland input contexts allow copying translations but deliberately refuse direct submission.
+
 Download a successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview9_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview10_amd64.deb
 rime-llm-translator setup && rime-llm-translator enable
 ```
 

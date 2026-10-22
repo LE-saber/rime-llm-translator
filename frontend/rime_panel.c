@@ -104,6 +104,9 @@ void rime_panel_open(IBusEngine* engine) {
 }
 
 gboolean rime_panel_key(IBusEngine* engine, guint keyval, guint state) {
+  if (keyval == IBUS_KEY_space && (state & IBUS_CONTROL_MASK) && g_getenv("RIME_LLM_TEST_DIAGNOSTICS"))
+    g_printerr("Panel chord: focused=%d client=%s state=%u\n", focused != NULL,
+               focus_client ? focus_client : "none", state);
   if (!focused || g_str_has_suffix(focus_client ? focus_client : "", ":rime-llm-panel"))
     return FALSE;
   GKeyFile* cfg = g_key_file_new();
@@ -139,6 +142,8 @@ gboolean rime_panel_key(IBusEngine* engine, guint keyval, guint state) {
       else key = ibus_keyval_from_name(parts[i]);
     }
     match = key && ibus_keyval_to_lower(keyval) == ibus_keyval_to_lower(key) && mods == expected;
+    if (keyval == IBUS_KEY_space && (state & IBUS_CONTROL_MASK) && g_getenv("RIME_LLM_TEST_DIAGNOSTICS"))
+      g_printerr("Panel binding: %s key=%u expected=%u match=%d\n", binding, key, expected, match);
     g_strfreev(parts);
   }
   g_free(binding); g_free(path); g_key_file_unref(cfg);

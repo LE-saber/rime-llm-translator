@@ -57,6 +57,7 @@ cfg["panel"]["open_hotkey"] = "Control+Alt+space"
 core.save_config(cfg)
 core.atomically_write(core.KEY_PATH, "local-test-only")
 os.environ["IBUS_ADDRESS"] = "unix:path=" + str(home / "ibus.sock")
+os.environ["RIME_LLM_TEST_DIAGNOSTICS"] = "1"
 GLib.set_prgname("rime-llm-panel")
 daemon = subprocess.Popen(["ibus-daemon", "--replace", "--panel=disable", "--config=disable",
                            "--address=" + os.environ["IBUS_ADDRESS"]])

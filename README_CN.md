@@ -1,15 +1,17 @@
 # Rime LLM Translator — 轻量离线机翻 + 按键 AI 修正
 
-目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview9` 使用原生 Bergamot INT8，并支持自定义 AI 快捷键及双击 Alt。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
+目标环境：Ubuntu 24.04 amd64、IBus、朙月拼音（含繁体）。`0.3.0~preview10` 使用原生 Bergamot INT8，并支持自定义 AI 快捷键及双击 Alt。安装包内含中英和英日模型，用户机器不需要 pip 安装、编译或首次下载权重。
 
 普通输入提供 `🌐 MT · EN/JA` 草稿；仅 AI 快捷键（默认 **Ctrl+Shift+Enter**）请求配置的 DeepSeek / OpenAI 兼容 API 修正。AI 读取中文原文和已有草稿，结果标为 `✦ AI · EN/JA` 并优先显示。API Key 可留空。
 
 ## 安装与升级
 
+preview10 新增原生长文本面板、GUI 设置、输入记录和发送时 AI 策略。详见 [长文本使用与验收](docs/LONG_TEXT.md)，含直接发送支持范围：当前为独立 GTK 窗口，GNOME Wayland 共享输入上下文只能复制译文。
+
 下载最新成功的 [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml)，解压后：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview9_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0~preview10_amd64.deb
 ```
 
 新用户运行：
@@ -23,6 +25,8 @@ rime-llm-translator setup && rime-llm-translator enable
 ```bash
 rime-llm-translator sync && rime-llm-translator enable
 rime-llm-translator install-offline
+systemctl --user restart rime-llm-translator.service rime-llm-ai.service
+rime-llm-translator settings
 ```
 
 `install-offline` 现在只校验包内资源。旧 `install-runtime`、`download-models`、`repair-offline` 命令也兼容为校验入口；清理使用单独命令。
