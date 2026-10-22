@@ -17,8 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install test dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev gnome-shell xwayland libgl1-mesa-dri
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev gnome-shell xwayland libgl1-mesa-dri
       - uses: actions/cache@v4
         id: mt-cache
         with:
