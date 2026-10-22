@@ -79,11 +79,17 @@ def wait(predicate, label, seconds=25):
         if predicate():
             print("PASS:", label, flush=True)
             return
+    if "editor" in globals():
+        print("Panel diagnostic:", gui.call_bridge("Focus"),
+              gui.call_bridge("State", "(s)", (editor.token,)),
+              "queued=", editor.queued, "message=", editor.message.get_text(), flush=True)
     raise AssertionError(label)
 
 def focus(context):
     context.focus_in()
-    context.set_engine("rime-llm")
+    engine = context.get_engine()
+    if not engine or engine.get_name() != "rime-llm":
+        context.set_engine("rime-llm")
     wait(lambda: context.get_engine() and context.get_engine().get_name() == "rime-llm", "focused context")
     pump()
 
@@ -162,7 +168,8 @@ try:
     assert cloud["calls"] == calls + 2  # two paragraphs, no duplicate job
     editor_context.focus_out()
     focus(target)
-    wait(lambda: target_commits and not editor.queued, "translation commits only after original target focuses")
+    print("Send target:", gui.call_bridge("Focus"), gui.call_bridge("State", "(s)", (editor.token,)), flush=True)
+    wait(lambda: target_commits and not editor.queued, "translation commits only after original target focuses", 12)
     assert target_commits[0].startswith("AI:") and "ai" not in editor.draft.results
     # A different context must cancel and can never receive the pending translation.
     token = gui.call_bridge("Open")

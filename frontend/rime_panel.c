@@ -190,8 +190,9 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
                    GDBusMethodInvocation* invocation, gpointer unused) {
   const gchar *supplied, *text;
   if (!strcmp(name, "Focus")) {
-    gchar* info = g_strdup_printf("focused=%d client=%s id=%s", focused != NULL,
-                                 focus_client ? focus_client : "none", focus_id ? focus_id : "none");
+    gchar* info = g_strdup_printf("focused=%d client=%s id=%s target-match=%d state=%s", focused != NULL,
+                                 focus_client ? focus_client : "none", focus_id ? focus_id : "none",
+                                 target_id && !g_strcmp0(target_id, focus_id), status);
     g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", info));
     g_free(info);
     return;
