@@ -13,8 +13,16 @@ def activate(app):
     window.add(text)
     xml = """<node><interface name='im.rime.WaylandTestTarget'>
       <method name='Text'><arg type='s' direction='out'/></method>
+      <method name='Other'><arg type='s' direction='out'/></method>
     </interface></node>"""
     def method(connection, sender, path, interface, name, args, invocation, data):
+        if name == "Other":
+            other = Gtk.ApplicationWindow(application=app, title="Unrelated text target")
+            other.set_default_size(300, 160)
+            other.add(Gtk.Entry())
+            other.show_all()
+            invocation.return_value(GLib.Variant("(s)", ("opened",)))
+            return
         buffer = text.get_buffer()
         invocation.return_value(GLib.Variant("(s)", (
             buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True),)))

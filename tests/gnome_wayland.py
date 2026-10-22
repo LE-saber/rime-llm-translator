@@ -53,6 +53,14 @@ def wait(predicate, label, seconds=30):
                 return
         except GLib.Error:
             pass
+    try:
+        print("Desktop diagnostic:", shell("({focus: global.display.focus_window?.get_title(), overview: global.rimeTestMain?.overview.visible, textFocus: Boolean(global.rimeTestMain?.inputMethod.currentFocus), windows: global.get_window_actors().map(a => [a.meta_window.get_title(), a.meta_window.get_gtk_application_id()])})"), flush=True)
+        if "gui" in globals():
+            print("IBus diagnostic:", gui.call_bridge("Focus"), flush=True)
+            if app.window:
+                print("Panel diagnostic:", app.window.message.get_text(), flush=True)
+    except Exception as exc:
+        print("Diagnostic unavailable:", exc, flush=True)
     raise AssertionError(label)
 
 
@@ -101,11 +109,17 @@ try:
     gui.core.save_config(cfg)
     app = gui.Application()
     assert app.register(None)
-    wait(lambda: "client=gnome-shell" in gui.call_bridge("Focus"), "real shared Wayland IBus context", 45)
+    wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "real shared Wayland IBus context", 45)
     token = gui.call_bridge("Open")
     wait(lambda: app.window is not None and app.window.token == token, "editor opened from target")
     editor = app.window
     assert editor.target_supported and editor.send_button.get_sensitive(), editor.message.get_text()
+    # A different session-bus sender cannot use or replace the frontend lease.
+    assert call("im.rime.LLMTranslator.Shell", "/im/rime/LLMTranslator/Shell",
+                "im.rime.LLMTranslator.Shell", "Begin", "(s)", (token,)) == (False,)
+    assert call("im.rime.LLMTranslator.Shell", "/im/rime/LLMTranslator/Shell",
+                "im.rime.LLMTranslator.Shell", "Submit", "(ss)", (token, "unauthorized")) == ("cancelled",)
+    assert target_text() == ""
     wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Rime Translator · 长文本' && a.meta_window.above && a.meta_window.skip_taskbar)"), "floating panel is above and excluded from taskbar")
     assert not editor.get_decorated()
     editor.buffer.set_text("你好，世界")
@@ -125,6 +139,23 @@ try:
     for _ in range(10):
         pump()
     assert target_text() == "Hello, world!"
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token, "session for unrelated-window isolation")
+    call("im.rime.WaylandTestTarget", "/im/rime/WaylandTestTarget", "im.rime.WaylandTestTarget", "Other")
+    wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Unrelated text target')"), "another real input window mapped")
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Unrelated text target').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Unrelated text target'"), "unrelated window focused")
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Wayland translation target'"), "return to old window does not renew lease")
+    editor.buffer.set_text("不要误发")
+    editor.draft.results["mt"] = "Never redirect"
+    editor.send()
+    wait(lambda: not editor.queued, "switching windows invalidates send")
+    assert target_text() == "Hello, world!"
+    assert gui.call_bridge("State", "(s)", (token,)) != "sent"
+    print("PASS: unrelated window invalidates lease even with shared IBus ID", flush=True)
+    shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
+    wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "original target focused for closed-window test")
     # Closing the original target invalidates the compositor lease. The draft
     # must be retained and no text may be redirected into the editor/another app.
     token = gui.call_bridge("Open")
