@@ -1,6 +1,6 @@
 # 旧版本升级与残留清理
 
-在 Ubuntu 虚拟机中执行。APT 用 sudo，其余命令用桌面普通用户。之前本项目的 WSL 临时构建残留已清除；本方案不操作宿主机和 WSL。
+从 [正式 Release](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) 获取安装包后，在 Ubuntu 虚拟机中执行。APT 用 sudo，其余命令用桌面普通用户。本方案只处理 Ubuntu 桌面用户的旧安装数据。
 
 ## 磁盘已满时先腾出空间
 
@@ -17,7 +17,7 @@ pip 缓存可能也包含其他 Python 项目的下载/构建文件，清理后�
 ## 安装、验证新版本
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0_amd64.deb
 rime-llm-translator sync && rime-llm-translator enable
 rime-llm-translator install-offline
 rime-llm-translator doctor
@@ -62,7 +62,7 @@ rime-llm-translator cleanup-legacy --pip-cache --argos-models --apply
 
 ## 始终保留的数据
 
-- `~/.config/rime-llm-translator/config.ini` 与 `api_key`。
+- `~/.config/rime-llm-translator/config.ini` 与 `api_key`，以及本机输入记录 `long-text.json`。
 - `~/.config/ibus/rime` 原生词库、词频和用户设置。
 - `~/.config/ibus/rime-llm` 新入口词库与设置。
 - 当前安装包提供的模型/程序，以及当前 MT/AI 缓存。

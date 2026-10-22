@@ -1,4 +1,4 @@
-# Ubuntu 24.04 手动验收（preview12）
+# Ubuntu 24.04 手动验收（v0.3.0）
 
 原生长文本、GUI 设置、历史、快捷键及目标隔离：先按 [长文本验收说明](LONG_TEXT.md) 操作，以下继续覆盖普通候选与离线引擎。
 
@@ -7,9 +7,9 @@
 
 ## 安装
 
-1. 下载对应 GitHub Actions 的 artifact，解压 `.deb` 和 `SHA256SUMS`。
-2. 在 `.deb` 所在目录（artifact 的 `dist/`）运行 `sha256sum --check SHA256SUMS`。
-3. `sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb`。
+1. 从 [v0.3.0 Release](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) 下载 `.deb` 和 `SHA256SUMS`。
+2. 在 `.deb` 和校验文件所在目录运行 `sha256sum --check SHA256SUMS`。
+3. `sudo apt install ./rime-llm-translator_0.3.0_amd64.deb`。
 4. 使用桌面普通用户运行 `rime-llm-translator install-offline`，应只校验包内模型，不运行 pip 或联网下载。若 preview5 已空间耗尽，按 [清理方案](UPGRADE_CLEANUP.md) 先处理共享 pip 下载缓存。
 5. 新用户运行 `rime-llm-translator setup`，配置语言、可选 AI 地址及密钥；只用机翻可留空。升级用户改运行 `sync`，保留已有配置与 Key。
 6. `rime-llm-translator enable`。
@@ -35,7 +35,7 @@ preview1–4 升级用户可先运行 `rime-llm-translator restore-native`，重
 | 快速连续输入、删除和重新输入 | 待处理请求不堆积；不会显示旧输入的迟到译文 |
 | 等待双语翻译 | 英文可先出现，日文稍后补齐，中文按键不等待推理 |
 | 翻译后空闲超过 60 秒 | `pgrep -af /usr/libexec/rime-llm-translator/rime-mt` 不再显示计算子进程；下次输入可重新启动 |
-| 记录实际资源 | 同时观察中文交互、CPU、RSS，和 artifact 的资源报告比较；报告不是虚拟机速度承诺 |
+| 记录实际资源 | 同时观察中文交互、CPU、RSS，和 Release 的资源报告比较；报告不是虚拟机速度承诺 |
 | 普通输入后观察日志 | AI worker 不发 API 请求；不读取云端密钥用于机翻 |
 | 在中文候选上按 AI 快捷键（默认 Ctrl+Shift+Enter） | 不提交中文，排队一次 AI 修正，完成后自动显示 `✦ AI · EN/JA` |
 | `rime-llm-translator hotkey 'Control+Alt+j'` 后保持输入法开启 | 查看命令 `hotkey` 与 `doctor` 显示新组合，按新组合请求 AI，无需重启；原 Ctrl+Shift+Enter 不再请求 AI |
@@ -68,5 +68,5 @@ systemctl --user status rime-llm-translator.service rime-llm-ai.service --no-pag
 journalctl --user -u rime-llm-translator.service -u rime-llm-ai.service -n 60 --no-pager
 ```
 
-自动检查涵盖模拟故障、真实 librime、真实 IBus 的候选更新信号、完整安装包和断网真实模型推理。
-GitHub 单核下的冷/热延迟和内存记录在资源报告；虚拟机体验、草稿质量、远端 API 和 GNOME/Wayland 绘制由本清单人工验收。
+自动检查涵盖模拟故障、真实 librime、真实 IBus 的候选更新信号、完整安装包、真实 GTK / GNOME 46 Wayland 提交及断网模型推理。
+GitHub 单核下的冷/热延迟和内存记录在资源报告；虚拟机体验、草稿质量、远端 API 和具体桌面应用由本清单人工验收。

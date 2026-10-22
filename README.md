@@ -1,66 +1,93 @@
-# Rime LLM Translator — lightweight offline MT + explicit AI
+# Rime LLM Translator
 
-Ubuntu 24.04 amd64, IBus, Luna Pinyin. `0.3.0~preview12` uses native CPU-only Bergamot and bundled Mozilla INT8 models, with configurable AI shortcuts including double Alt. No pip, compilation or first-run model download on the user's machine.
+[中文说明](README_CN.md) · [Download v0.3.0](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [Changelog](CHANGELOG.md)
 
-Normal typing produces offline English/Japanese drafts. The AI shortcut (default **Ctrl+Shift+Enter**) explicitly sends the original Chinese and available drafts to the configured DeepSeek / OpenAI-compatible API for revision. An API key is optional. MT never uploads input or automatically falls back to cloud AI.
+Chinese input, lightweight offline translation and optional cloud AI for **Ubuntu 24.04 amd64, GNOME 46, IBus and Luna Pinyin**. Traditional Chinese remains available. Windows and other desktops are outside this release's supported scope.
 
-## Install
+Type normally for English/Japanese translation candidates, or revise longer Chinese text in a floating editor before sending its translation. Native GTK3, C/IBus and CPU-only Bergamot INT8 share one offline worker. Models are bundled: no pip, GPU, local compilation or first-run model downloads.
 
-preview12 improves the native floating editor with icon controls, fresh empty drafts, unsent history recall, and a spinner with elapsed seconds during AI send. AI-on-send defaults on once the provider is configured and can be disabled. The destination follows the latest real text field selected while the panel is open; editing or focusing settings inside the panel never replaces it. A bundled GNOME 46 bridge restores and verifies that destination on Wayland. See [long-text behavior and acceptance](docs/LONG_TEXT.md). Run sync + enable and log out/in after upgrading.
+## Screenshots
 
-Download a successful [GitHub Actions artifact](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml), then:
+Large editable source, compact language preview, icon tools and configurable AI-on-send:
+
+![Native floating editor, light theme](docs/images/long-text-light.png)
+
+Dracula-style dark theme; AI sends show a spinner and elapsed seconds:
+
+![AI translation in progress](docs/images/ai-sending.png)
+
+[Dark editor](docs/images/long-text-dark.png) · [GUI settings](docs/images/settings.png). These are native GTK screenshots from GitHub Actions using public test text and a local mock AI provider, illustrating the UI and interactions.
+
+## Install or upgrade
+
+Download the `.deb` and `SHA256SUMS` from [Releases](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) into the same directory:
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb
+sha256sum --check SHA256SUMS
+sudo apt install ./rime-llm-translator_0.3.0_amd64.deb
+```
+
+New installation:
+
+```bash
 rime-llm-translator setup && rime-llm-translator enable
 ```
 
-Existing users run `sync && enable` instead of `setup` to retain provider settings and keys. `install-offline` now verifies bundled resources. Except apt, run commands as the desktop user.
-
-Log out/in. Add **Chinese > Rime Translator** in Settings > Keyboard > Input Sources. Stock Rime remains available. The new engine uses `~/.config/ibus/rime-llm` and refreshes late results through IBus without another key or OS key injection.
-
-## Change the AI shortcut
+Upgrade from a preview, retaining API keys and preferences:
 
 ```bash
-rime-llm-translator hotkey 'Control+Alt+j'
-rime-llm-translator hotkey
+rime-llm-translator sync && rime-llm-translator enable
 ```
 
-For double Alt (preview9 or newer):
+Run commands as your desktop user except for APT. **Log out and back in**, then add **Chinese → Rime Translator** in Settings → Keyboard → Input Sources. Select Luna Pinyin with Ctrl+grave if necessary. `sync` / `enable` install the per-user GNOME bridge; if user extensions are globally disabled, enable them in GNOME Extensions. `doctor` should report the floating-panel bridge as active.
+
+Stock Rime remains independent; this engine uses `~/.config/ibus/rime-llm`. Credentials are optional for offline English/Japanese. Open GUI settings with `rime-llm-translator settings` or the application launcher entry.
+
+## Using it
+
+| Action | Behavior |
+|---|---|
+| Normal Chinese composition | Native Chinese plus `🌐 MT · EN/JA` candidates; late results refresh without another key |
+| AI shortcut, default Ctrl+Shift+Enter | Explicit API revision of the selected Chinese candidate; no automatic commit |
+| Open editor, default Alt+Space | Empty, resizable, always-above panel; selected Chinese is kept in history |
+| Edit in the panel | Rime selections accumulate in the editable source; offline preview follows edits |
+| Send, default Ctrl+Enter | Send the preview language to the latest selected real text field, then clear on success |
+| Empty source + ↑ / ↓ | Recall recent local text, including drafts closed without sending |
+
+The destination follows the latest real text field selected while the panel is open: start in A, select B, return to the panel, then send to B. This also works between fields in one window. The panel and its settings fields never become destinations. GNOME integration restores and verifies the target; a closed/invalid target or failed submission preserves the source. No global paste or simulated typing is used.
+
+**Live preview uses offline MT. AI-on-send defaults on once an API URL, model and nonempty key are configured; you can turn it off.** Manual AI affects only the current text/language. Edits, language changes and successful sends return to MT preview. AI failure, timeout or stale/truncated output never silently sends MT instead. Only requested AI operations upload text to the configured provider.
+
+Record shortcuts in GUI settings; DoubleAlt / TripleAlt and in-panel mouse side buttons are supported. Alt+Space may conflict with GNOME's window menu: record an unused opening chord such as Ctrl+Alt+Space. Opening depends on keyboard events reaching Rime Translator, not a global desktop shortcut. CLI example:
 
 ```bash
 rime-llm-translator hotkey DoubleAlt
 ```
 
-Tap and release the same Alt key twice within 400 ms while a native Chinese candidate is selected. Left Alt is recommended: right Alt may be AltGr on some layouts. Holding/repeating Alt, another key, changing focus or resetting composition cancels the sequence. Pure Alt is reserved for this gesture while composing; Alt combinations still pass through, and outside a Chinese composition Alt is unchanged. The gesture uses the frontend's monotonic clock and never automatically commits text.
+Double Alt requires two complete taps of the same Alt within 400 ms while a Chinese candidate is selected. Desktop/VM host shortcuts can intercept events. See [long-text behavior and acceptance](docs/LONG_TEXT.md).
 
-Choose a shortcut unused by your desktop, applications and VM host. The command only changes `[translation] ai_hotkey` in `~/.config/rime-llm-translator/config.ini`, retaining provider settings, API key and dictionaries. `setup` also asks for the shortcut; `doctor` displays it. Changes take effect immediately after the current frontend and plugin are loaded. When upgrading, run `sync && enable` and log out/in once first.
+## Resources and limits
 
-Use one or more of `Control` (`Ctrl`), `Alt`, `Shift`, `Super`, followed by a letter, digit, `F1`–`F12`, `Return` (`Enter`) or `space`. At least one of Control/Alt/Super is required. Example: `Control+Shift+F8`. The old shortcut stops requesting AI after a change. A desktop or VM host shortcut may intercept keys before they reach Rime; this tool cannot detect all such conflicts.
+- One native inference process/thread; one model direction resident at a time; the child exits after 60 seconds idle. The panel loads on demand, with no browser runtime.
+- Chinese→English tiny model; Japanese pivots through English→Japanese base-memory. OpenCC normalizes only the MT copy; AI receives the original Chinese. These are basic drafts requiring human review, especially names, numbers and negation. The upstream tiny model is not marked Release in its registry.
+- CPU must expose SSE4.1 to the VM. Ordinary candidates accept 1,200 UTF-8 bytes; the panel accepts 32 KiB and translates ordered chunks. Offline languages: English/Japanese; other configured languages require AI.
+- MT/AI have separate services and bounded caches (350 entries / 10 MiB each). Logs omit text, translations and keys. Optional local history stores up to 50 deduplicated entries and can be cleared/disabled.
 
-Use the shortcut while a Chinese candidate is selected and the composition remains open. It is handled inside Rime Translator, not registered as a global desktop shortcut. Ordinary Traditional Chinese input remains available.
+Download `RESOURCE_REPORT.md` and `mt-benchmark.json` from the Release for actual package size, measured disk/RSS/latency and public sample translations. System dependencies are additional; runner measurements do not predict your VM's speed.
 
-## Behavior and resources
-
-- One native computation process and inference thread, at most one logical CPU by default. Only one model direction is resident; changing direction releases the old model. 60 seconds idle exits the child and releases its memory.
-- One Chinese character triggers MT after a 450 ms debounce. Only the latest pending input is retained. English publishes before Japanese finishes.
-- OpenCC normalizes only the MT copy to simplified Chinese. Japanese pivots through English; AI keeps the original Chinese.
-- Separate MT/AI services, timeouts and caches. Each cache has at most 350 entries and 10 MiB; model revisions invalidate old results.
-- Input limit: 1200 UTF-8 bytes, with token-budget splitting. Offline targets: English and Japanese. Other languages can use explicit AI requests.
-- CPU must expose SSE4.1. Native builds do not use `-march=native`.
-- Model resources total about 60.8 decimal MB. Chinese-English uses tiny (not yet marked Release in the upstream registry); English-Japanese uses base-memory. This is a preview requiring manual draft-quality acceptance. See `RESOURCE_REPORT.md` for measured disk, latency and memory, and `mt-benchmark.json` for public sample translations. GitHub runner measurements are not VM performance guarantees.
-
-## Cleanup
+## Help, cleanup and development
 
 ```bash
-rime-llm-translator cleanup-legacy          # preview only
-rime-llm-translator cleanup-legacy --apply  # delete private old venv/temp files
+rime-llm-translator doctor
+rime-llm-translator install-offline        # verify bundled resources
+rime-llm-translator cleanup-legacy         # inspect old private venv/temp files
+rime-llm-translator cleanup-legacy --apply # remove selected legacy files
 ```
 
-Keys, configuration and Rime dictionaries remain. Shared pip cache and old Argos models require explicit `--pip-cache` / `--argos-models` selection; symlink redirects are refused. See [upgrade and cleanup](docs/UPGRADE_CLEANUP.md) for disk-full recovery and shared-data implications.
+Cleanup retains keys, settings, history and Rime dictionaries. Shared pip cache / Argos models require explicit options. See [upgrade and cleanup](docs/UPGRADE_CLEANUP.md), [manual acceptance](docs/MANUAL_TEST.md), [build instructions](docs/DEVELOPMENT.md) and [changes](CHANGELOG.md).
 
-Use `doctor` for diagnosis, `disable` to stop new translations, and switch to stock Rime at any time. For preview1–4, `restore-native` removes translator patches from the original Rime schema; redeploy afterwards.
+GitHub Actions tests Ubuntu 24.04 package installation, unit tests, real Rime/IBus/GTK, real GNOME 46 Wayland focus/submission, mock AI failures and network-disabled native model benchmarks. No WSL is used. Actual cloud quality and the user's applications/VM still need manual acceptance.
 
-See [中文说明](README_CN.md), [manual acceptance](docs/MANUAL_TEST.md) and [plan](docs/LIGHTWEIGHT_MT_PLAN.md). Builds/tests use GitHub Actions without WSL. Cloud quality and GNOME/Wayland behavior require user acceptance.
+## Source and licenses
 
-The frontend derives from GPLv3-or-later ibus-rime 1.5.0, with modified sources and license included in `frontend/` and the package. The Mozilla inference sources, dependency licenses and pinned submodules are included as `/usr/share/doc/rime-llm-translator/inference-source.tar.xz`; wrapper sources and revisions accompany it. Mozilla models are MPL 2.0; hashes are in `native/mt/models.lock.json`. The root Ollama prototype is retained as an unused upstream reference.
+The frontend derives from GPLv3-or-later [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3); its source/license are in [frontend/](frontend/) and the package. Mozilla inference sources, pinned dependencies and license texts are bundled in `/usr/share/doc/rime-llm-translator/inference-source.tar.xz`; wrapper sources and revisions accompany them. Mozilla models are MPL 2.0, with hashes/licenses recorded in [models.lock.json](native/mt/models.lock.json). Third-party components retain their own licenses. The root Ollama Lua prototype is an unused upstream reference, not the installed runtime.

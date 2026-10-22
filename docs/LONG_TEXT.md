@@ -1,11 +1,11 @@
-# 原生长文本模式（preview12）
+# 原生长文本模式（v0.3.0）
 
 Ubuntu 24.04 amd64，GNOME 46、IBus / 朙月拼音（含繁体）。使用系统 GTK3 和现有离线翻译进程，按需打开置顶悬浮面板。
 
 ## 升级与打开
 
 ```bash
-sudo apt install ./rime-llm-translator_0.3.0~preview12_amd64.deb
+sudo apt install ./rime-llm-translator_0.3.0_amd64.deb
 rime-llm-translator sync && rime-llm-translator enable
 ```
 
