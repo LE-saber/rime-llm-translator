@@ -136,7 +136,7 @@ static void rime_with_ibus() {
   ibus_rime_start(full_check);
   ibus_rime_load_settings();
 
-  rime_panel_init();
+  rime_panel_init(bus);
 
   ibus_main();
 

@@ -75,6 +75,14 @@ class LongTextTests(unittest.TestCase):
             validate_shortcuts({"open": "Control+space", "send": "Control+space"})
         validate_shortcuts({"open": "Alt+space", "ai": "DoubleAlt", "send": "Button8"})
 
+    def test_truncated_cloud_result_is_rejected(self):
+        from unittest.mock import Mock
+        from test_translator import Response
+        response = Response({"choices": [{"finish_reason": "length", "message": {
+            "content": '{"en":"A valid looking but unfinished translation"}'}}]})
+        with self.assertRaises(ValueError):
+            core.translate("原文还有内容", core.config_default(), "fake-key", opener=Mock(return_value=response))
+
     def worker(self, directory, mode, callback):
         cfg = core.config_default()
         root = Path(directory)

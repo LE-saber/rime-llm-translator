@@ -281,6 +281,7 @@ ibus_rime_engine_focus_in (IBusEngine *engine)
 {
   IBusRimeEngine *rime_engine = (IBusRimeEngine *)engine;
   rime_engine->focused = TRUE;
+  rime_panel_legacy_focus(engine);
   ++rime_engine->shortcut_epoch;
   ibus_engine_register_properties(engine, rime_engine->props);
   if (!rime_engine->session_id) {

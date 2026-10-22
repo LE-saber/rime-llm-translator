@@ -10,6 +10,8 @@ extern RimeSessionId rime_engine_session(IBusEngine* engine);
 #define BRIDGE "im.rime.LLMTranslator.Bridge"
 #define PATH "/im/rime/LLMTranslator/Bridge"
 static GDBusConnection* connection;
+static IBusBus* ibus;
+static guint focus_epoch;
 static IBusEngine* focused;
 static gchar *focus_id, *focus_client, *target_id, *token, *peer, *pending;
 static const gchar* status = "closed";
@@ -28,6 +30,13 @@ static gboolean submit(gpointer unused) {
     g_clear_pointer(&pending, g_free);
     status = "expired";
   } else if (focused && !g_strcmp0(focus_id, target_id)) {
+    /* Initial IBus FocusId discovery is asynchronous. Require a confirmed
+       FocusInId after the editor yields focus, never submit using a guess. */
+    if (!g_strcmp0(focus_client, "unknown")) return G_SOURCE_CONTINUE;
+    if (!g_strcmp0(focus_client, "gnome-shell") || !g_strcmp0(focus_client, "fake")) {
+      cancel(); status = "unsupported";
+      return G_SOURCE_CONTINUE;
+    }
     guint purpose = 0, hints = 0;
     ibus_engine_get_content_type(focused, &purpose, &hints);
     if (purpose == IBUS_INPUT_PURPOSE_PASSWORD || purpose == IBUS_INPUT_PURPOSE_PIN) {
@@ -42,6 +51,7 @@ static gboolean submit(gpointer unused) {
 }
 
 void rime_panel_focus(IBusEngine* engine, const char* context, const char* client) {
+  ++focus_epoch;
   focused = engine;
   g_free(focus_id); focus_id = g_strdup(context);
   g_free(focus_client); focus_client = g_strdup(client);
@@ -52,8 +62,32 @@ void rime_panel_focus(IBusEngine* engine, const char* context, const char* clien
 }
 
 void rime_panel_blur(IBusEngine* engine) {
+  ++focus_epoch;
   if (focused == engine) focused = NULL;
   alt_count = 0; alt_down = 0;
+}
+
+typedef struct { IBusEngine* engine; guint epoch; } InitialFocus;
+static void initial_focus_ready(GObject* object, GAsyncResult* result, gpointer data) {
+  InitialFocus* initial = data;
+  GError* error = NULL;
+  gchar* id = ibus_bus_current_input_context_async_finish(IBUS_BUS(object), result, &error);
+  if (id && initial->epoch == focus_epoch && focused == initial->engine) {
+    g_free(focus_id); focus_id = g_strdup(id);
+  }
+  g_free(id); g_clear_error(&error);
+  g_object_unref(initial->engine); g_free(initial);
+}
+
+void rime_panel_legacy_focus(IBusEngine* engine) {
+  if (!ibus || (focused == engine && focus_id)) return;
+  ++focus_epoch;
+  focused = engine;
+  g_clear_pointer(&focus_id, g_free);
+  g_free(focus_client); focus_client = g_strdup("unknown");
+  InitialFocus* initial = g_new0(InitialFocus, 1);
+  initial->engine = g_object_ref(engine); initial->epoch = focus_epoch;
+  ibus_bus_current_input_context_async(ibus, 1000, NULL, initial_focus_ready, initial);
 }
 
 void rime_panel_destroy(IBusEngine* engine) {
@@ -186,7 +220,8 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
   g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", status));
 }
 
-void rime_panel_init(void) {
+void rime_panel_init(IBusBus* bus) {
+  ibus = bus;
   const gchar* xml = "<node><interface name='" BRIDGE "'>"
     "<method name='Focus'><arg type='s' direction='out'/></method>"
     "<method name='Open'><arg type='s' direction='out'/></method>"

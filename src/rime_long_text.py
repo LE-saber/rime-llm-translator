@@ -127,6 +127,8 @@ class PanelWorker:
         try:
             source = job["source"]
             cfg = copy.deepcopy(self.core.load_config())
+            if not cfg.getboolean("translation", "enabled", fallback=True):
+                raise ValueError("翻译已禁用")
             languages = self.core.parse_languages(cfg["translation"]["languages"])
             code = job["language"]
             if code not in languages:

@@ -397,11 +397,13 @@ class EditorWindow(Gtk.ApplicationWindow):
         Settings(self).run_and_save()
 
     def action(self, binding):
-        if binding == self.cfg["translation"]["ai_hotkey"]:
+        # CLI changes to bindings take effect in an already open panel too.
+        cfg = core.load_config()
+        if binding == cfg["translation"]["ai_hotkey"]:
             self.ai()
-        elif binding == self.cfg["panel"]["send_hotkey"]:
+        elif binding == cfg["panel"]["send_hotkey"]:
             self.send()
-        elif binding == self.cfg["panel"]["open_hotkey"]:
+        elif binding == cfg["panel"]["open_hotkey"]:
             self.close_panel()
         else:
             return False
