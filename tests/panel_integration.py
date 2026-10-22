@@ -97,6 +97,16 @@ def buffer_text(widget):
     buffer = widget.get_buffer()
     return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True)
 
+def check_send_contrast(editor):
+    def luminance(color):
+        channels = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
+                    for value in (color.red, color.green, color.blue)]
+        return sum(value * weight for value, weight in zip(channels, (.2126, .7152, .0722)))
+    foreground = editor.send_button.get_child().get_style_context().get_color(Gtk.StateFlags.NORMAL)
+    background = editor.send_button.get_style_context().get_background_color(Gtk.StateFlags.NORMAL)
+    a, b = sorted((luminance(foreground), luminance(background)))
+    assert (b + .05) / (a + .05) >= 4.5, "Send button label has insufficient contrast"
+
 try:
     IBus.init()
     bus = IBus.Bus.new()
@@ -147,6 +157,7 @@ try:
     wait(lambda: "mt" in editor.draft.results, "real packaged MT translates multiline draft", 55)
     assert "\n" in editor.draft.results["mt"]
     assert cloud["calls"] == 0, "typing requested cloud"
+    check_send_contrast(editor)
     screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
     screenshot.savev("dist/native-long-text.png", "png", [], [])
     editor.ai()
@@ -221,6 +232,7 @@ try:
     if core.load_config()["panel"]["theme"] != "dark":
         editor.toggle_theme()
     wait(lambda: "mt" in editor.draft.results, "night theme keeps the offline preview usable")
+    check_send_contrast(editor)
     pump()
     screenshot = Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
     screenshot.savev("dist/native-dark.png", "png", [], [])

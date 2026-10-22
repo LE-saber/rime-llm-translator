@@ -187,7 +187,8 @@ class EditorWindow(Gtk.ApplicationWindow):
         notebook header tabs tab:checked {box-shadow: none; border-bottom: 2px solid AC;}
         label, checkbutton {color: FG;} selection {background: AC; color: SF;}
         .source {font-size: 17px;} .preview {font-size: 12px;}
-        .send {background: AC; color: SF;} scrolledwindow {border: 1px solid BD;}
+        .send {background: AC; color: BG; text-shadow: none;}
+        .send label {color: BG; text-shadow: none;} scrolledwindow {border: 1px solid BD;}
         """
         for key, value in (("BG", background), ("SF", surface), ("FG", foreground), ("BD", border), ("AC", accent)):
             css = css.replace(key, value)
