@@ -15,7 +15,7 @@ def activate(app):
       <method name='Text'><arg type='s' direction='out'/></method>
       <method name='Other'><arg type='s' direction='out'/></method>
     </interface></node>"""
-    def method(connection, sender, path, interface, name, args, invocation, data):
+    def method(connection, sender, path, interface, name, args, invocation):
         if name == "Other":
             other = Gtk.ApplicationWindow(application=app, title="Unrelated text target")
             other.set_default_size(300, 160)
