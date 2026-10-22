@@ -9,18 +9,33 @@ permissions:
   contents: read
 jobs:
   test-and-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Install test dependencies
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.4 python3-yaml g++ librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin
+          # The runner's Azure mirror can stall on desktop/Rime packages.
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y lua5.4 python3-yaml python3-gi gir1.2-gtk-3.0 gir1.2-ibus-1.0 ibus-gtk3 fonts-noto-cjk g++ pkg-config libibus-1.0-dev libnotify-dev librime-dev librime-bin librime-plugin-lua rime-data-luna-pinyin rime-prelude rime-essay rime-data-stroke dbus-x11 xvfb xauth cmake libopenblas-dev libopencc-dev nlohmann-json3-dev gnome-shell xwayland libgl1-mesa-dri
+      - uses: actions/cache@v4
+        id: mt-cache
+        with:
+          path: |
+            .build/mozilla
+            .build/mt
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'native/mt/low-memory.patch', 'packaging/build-mt.sh') }}
+          restore-keys: mt-ubuntu24-
       - name: Syntax check
         run: |
-          python3 -m py_compile src/rime_llm_translator.py
+          python3 -m py_compile src/*.py packaging/fetch-mt-models.py tests/benchmark_mt.py
           luac5.4 -p lua/rime_llm_translator.lua
           luac5.4 -p lua/rime_llm_ai_hotkey.lua
           lua5.4 tests/test_lua_filter.lua
@@ -48,25 +63,98 @@ jobs:
           grep -Fn 'lua_filter@*rime_llm_translator' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
           grep -Fn 'lua_processor@*rime_llm_ai_hotkey' "$RUNNER_TEMP/rime-with-filter/build/luna_pinyin.schema.yaml"
       - name: Build .deb
-        run: bash packaging/build-deb.sh
+        id: build
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+          fi
+          bash packaging/build-deb.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.build.outcome == 'success' && steps.mt-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .build/mozilla
+            .build/mt
+          key: mt-ubuntu24-${{ hashFiles('native/mt/engine.lock', 'native/mt/main.cpp', 'native/mt/CMakeLists.txt', 'native/mt/low-memory.patch', 'packaging/build-mt.sh') }}
       - name: Inspect installer
         run: |
           dpkg-deb -c dist/*.deb
-          test "$(dpkg-deb -f dist/*.deb Architecture)" = all
+          test "$(dpkg-deb -f dist/*.deb Architecture)" = amd64
           test "$(dpkg-deb -f dist/*.deb Package)" = rime-llm-translator
+          test "$(dpkg-deb -f dist/*.deb Version)" = "$(cat VERSION)"
+          (cd dist && sha256sum --check SHA256SUMS)
       - name: Smoke-test installable package
+        timeout-minutes: 3
         run: |
-          sudo apt-get install -y ./dist/*.deb
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --no-install-recommends -y ./dist/*.deb
           command -v rime-llm-translator
           rime-llm-translator doctor
+          test -x /usr/libexec/rime-llm-translator/ibus-engine-rime-llm
+          systemd-analyze --user verify packaging/rime-llm-translator.service packaging/rime-llm-ai.service
+      - name: IBus idle candidate refresh without another key
+        run: |
+          export HOME="$RUNNER_TEMP/ibus-home"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/ibus-runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 120s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/ibus_refresh.py
+      - name: Native GTK long-text and target isolation
+        env:
+          RIME_LLM_TEST_DIAGNOSTICS: 1
+        run: |
+          export HOME="$RUNNER_TEMP/panel-home"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/panel-runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 150s dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/panel_integration.py
+      - name: Native CLI diagnostics with public examples
+        env:
+          RIME_MT_DIAGNOSTICS: 1
+          OPENBLAS_NUM_THREADS: 1
+          OMP_NUM_THREADS: 1
+        run: python3 tests/smoke_native.py
+      - name: Real GNOME 46 Wayland send and floating panel
+        timeout-minutes: 4
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+          XDG_SESSION_TYPE: wayland
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GNOME_SHELL_SESSION_MODE: user
+        run: |
+          export HOME="$RUNNER_TEMP/gnome-home"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/gnome-runtime"
+          mkdir -p "$HOME" "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          timeout 180s dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' /usr/bin/python3 tests/gnome_wayland.py
+      - name: Real offline models and resource report (network disabled)
+        timeout-minutes: 8
+        run: |
+          rime-llm-translator install-offline
+          CORE="$(awk '/Cpus_allowed_list/ {split($2,a,/[,-]/); print a[1]}' /proc/self/status)"
+          sudo -E unshare --net taskset -c "$CORE" /usr/bin/python3 tests/benchmark_mt.py
       - uses: actions/upload-artifact@v4
+        if: always() && steps.build.outcome == 'success'
         with:
           name: rime-llm-translator-ubuntu24.04
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/SHA256SUMS
+            README_CN.md
+            docs/MANUAL_TEST.md
+            docs/UPGRADE_CLEANUP.md
+            docs/LONG_TEXT.md
+            dist/RESOURCE_REPORT.md
+            dist/mt-benchmark.json
+            dist/native-*.png
+            dist/gnome-wayland.log
           if-no-files-found: error
           retention-days: 30
-      - name: Publish tagged release
+      - name: Prepare verified tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/*.deb --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+            --title "Rime LLM Translator $GITHUB_REF_NAME" \
+            --notes-file "docs/releases/$GITHUB_REF_NAME.md" \
+            dist/*.deb dist/SHA256SUMS dist/RESOURCE_REPORT.md dist/mt-benchmark.json

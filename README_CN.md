@@ -1,82 +1,95 @@
-# Rime LLM Translator — 离线机翻 + 按键 AI 修正
+# Rime LLM Translator
 
-适用：Ubuntu 24.04、IBus-Rime、朙月拼音（含繁体）。本项目依赖 [Argos Translate](https://github.com/argosopentech/argos-translate) 提供离线机器翻译，**用户按下快捷键时才调用 DeepSeek / OpenAI 兼容 API**，不使用 Ollama。
+[English](README.md) · [下载 v0.3.0 正式版](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [更新记录](CHANGELOG.md)
 
-## 候选行为
+为 **Ubuntu 24.04 amd64、GNOME 46、IBus / 朙月拼音**提供轻量离线翻译、可编辑长文本悬浮框和可选云端 AI。保留普通中文及繁体输入。本版本不支持 Windows，其他桌面环境不在支持范围内。
 
-- 默认允许 **一个中文字**起触发本地翻译；后台约 450ms 防抖，快速输入时只翻译最新稳定候选，无云端 Token 消耗。
-- 中文原生候选始终先显示。缓存命中后自动追加外语候选，注释 `🌐 MT · EN` / `🌐 MT · JA`。
-- **Ctrl+Shift+Enter**：在 Rime 仍有当前中文候选时发出一次 AI 修正请求。结果缓存后替代对应的机器翻译候选，注释 `✦ AI · EN` / `✦ AI · JA`。
-- 网络断开，MT 仍可翻译（模型需事先下载）。AI 快捷键离线时无法调用远程服务，普通输入和 MT 不受影响。
-- **限制**：后台写入新结果不会直接通知正在静止显示的候选框。缓存结果在下一次 Rime 菜单重算/按键时可见；实时刷新不保证在完全停止输入后自动触发。译文生成不是逐字符同步阻塞输入。
-- Argos 的 **简体中文→英语、繁体中文→英语、英语→日语**为官方提供的可下载语言包；中文→日语经英文中转，译质不如专门中日模型。初次部署需要网络下载语言模型，日后可断网使用。
+普通打字即可出现英、日机翻候选；长文本可在悬浮框中选词、修改，再将译文发送到真实输入框。程序使用原生 GTK3、C / IBus 与 CPU Bergamot INT8，共用一个离线计算进程。安装包包含模型，无需 pip、GPU、本机编译或首次下载权重。
 
-## 安装（不接管现有 Rime）
+## 界面演示
 
-从 [Actions](https://github.com/LE-saber/rime-llm-translator/actions/workflows/build.yml) 下载 `preview4` 的 Ubuntu .deb，解压后：
+大原文编辑区、小型语言预览、图标工具和可关闭的“发送用 AI”开关：
+
+![日间长文本悬浮框](docs/images/long-text-light.png)
+
+Dracula 夜间主题；等待 AI 发送时，按钮显示转圈和耗时秒数：
+
+![AI 发送进度](docs/images/ai-sending.png)
+
+[夜间完整界面](docs/images/long-text-dark.png) · [GUI 设置](docs/images/settings.png)。图片来自 GitHub Actions 的真实 GTK 程序，使用公开测试文本与本地模拟 AI 接口，用于展示界面和交互。
+
+## 安装与升级
+
+从 [v0.3.0 Release](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) 下载 `.deb` 和 `SHA256SUMS`，放入同一目录：
 
 ```bash
-sudo apt install ./rime-llm-translator_0.2.0~preview4_all.deb
+sha256sum --check SHA256SUMS
+sudo apt install ./rime-llm-translator_0.3.0_amd64.deb
+```
 
-# 首次下载 Python 离线引擎与三套语言模型；可能花费一些时间/空间
-rime-llm-translator install-offline
+新用户运行：
 
-# 如已保存 API Key 和语言设置，只更新用户 Lua 文件
-rime-llm-translator sync
+```bash
+rime-llm-translator setup && rime-llm-translator enable
+```
+
+旧版本升级运行以下命令，保留 API Key、模型、快捷键等配置：
+
+```bash
+rime-llm-translator sync && rime-llm-translator enable
+```
+
+除 APT 外，均使用桌面普通用户。**注销并重新登录**，在设置 → 键盘 → 输入源 → 中文中添加 **Rime Translator** 并切换过去；必要时按 Ctrl+反引号选择朙月拼音。
+
+`sync` / `enable` 安装当前用户的 GNOME 桥接扩展。如果全局禁用了用户扩展，需在 GNOME Extensions 中启用。运行 `rime-llm-translator doctor`，确认 `GNOME floating-panel bridge` 为 `active`。
+
+原生 Rime 输入源独立保留，新入口使用 `~/.config/ibus/rime-llm`，不会复制或同时打开原生词频数据库。只用离线英日翻译可不填密钥。应用列表提供设置入口，也可运行 `rime-llm-translator settings` 打开 GUI。
+
+## 怎样使用
+
+| 操作 | 效果 |
+|---|---|
+| 正常拼音输入 | 保留中文候选，后台补充 `🌐 MT · EN/JA`，无需额外按键刷新 |
+| AI 快捷键，默认 Ctrl+Shift+Enter | 对选中的中文候选请求云端修正，显示 `✦ AI · EN/JA`，不自动上屏 |
+| 打开长文本，默认 Alt+Space | 打开空白、置顶、可拖动缩放的悬浮框；原候选只保存进记录 |
+| 在悬浮框选词、编辑 | 中文累积到可编辑原文区，旁边实时机翻预览 |
+| 发送，默认 Ctrl+Enter | 当前预览语言的译文写入最近选择的真实输入框，成功后清空 |
+| 原文为空时按 ↑ / ↓ | 依次回溯最近文本，包括关闭前未发送的内容 |
+
+**发送位置跟随最近选择的真实文本框。** 从 A 打开，期间点击 B 放入文本光标，再回悬浮框编辑，译文会发往 B；未改选则仍是 A。同窗口中的不同输入框也适用。悬浮原文区和本程序设置框始终排除。顶栏显示目标窗口，提交时恢复并核对目标；目标关闭、失效或发送失败会保留原文。不使用全局粘贴或模拟打字提交。
+
+**实时预览使用离线机翻。填写 API 地址、模型和非空密钥后，“发送用 AI”默认生效，可手动关闭。** 手动 AI 仅处理当前文本和语言；改字、换语言、成功发送后回到机翻预览。等待时显示转圈与秒数；失败、超时、截断或过期结果不会被机翻悄悄替代。只有主动请求 AI 或开启 AI 发送后执行发送，才将文本上传至配置的服务。
+
+GUI 支持录制快捷键、双 / 三击 Alt 和面板内鼠标侧键。**Alt+Space 可能被 GNOME 窗口菜单占用**，可改录未占用的 Ctrl+Alt+Space 等组合。打开依赖 Rime Translator 收到键盘事件，不是全局桌面快捷键。CLI 修改候选 AI 快捷键：
+
+```bash
+rime-llm-translator hotkey DoubleAlt
+```
+
+选中未上屏中文候选，在 400 ms 内完整点按同一个 Alt 两次；按住、夹入其他键或切换焦点会取消手势。宿主机 / 桌面快捷键可能提前拦截按键。详细操作见 [长文本说明与验收](docs/LONG_TEXT.md)。
+
+## 性能、隐私与限制
+
+- 原生计算进程单线程，默认最多使用一个逻辑核，较低 CPU 优先级；一次只驻留一个模型方向，空闲 60 秒退出。面板按需启动，不引入 Electron 或浏览器运行时。
+- 中英使用 tiny 模型，日文经英文中转，定位为基本草稿。OpenCC 只转换机翻副本，AI 收到原始中文。上游 tiny 模型尚未标记为 Release，专名、数字、否定等需人工检查。
+- 虚拟机 CPU 需要暴露 SSE4.1。普通候选源文本上限 1,200 UTF-8 字节，长文本上限 32 KiB，按顺序分块翻译。离线支持英、日，其他配置语言需要 AI。
+- MT / AI 独立服务，各自缓存最多 350 项、10 MiB。日志不记录正文、译文或密钥。可选本机输入记录最多 50 条去重，可关闭或清空。
+
+Release 附有 `RESOURCE_REPORT.md` 和 `mt-benchmark.json`，记录实际包大小、项目解压磁盘、内存、冷 / 热延迟和公开样本译文。系统依赖另计，GitHub runner 测量不能代表用户虚拟机速度。
+
+## 诊断与旧版清理
+
+```bash
 rime-llm-translator doctor
+rime-llm-translator install-offline        # 校验包内引擎与模型
+rime-llm-translator cleanup-legacy         # 仅查看旧私有环境 / 临时目录
+rime-llm-translator cleanup-legacy --apply # 删除选中的旧残留
 ```
 
-新用户请先运行 `rime-llm-translator setup` 配置目标语言（例如 `en:English,ja:Japanese`）、AI API 地址/模型及密钥，或直接编辑 `~/.config/rime-llm-translator/config.ini`。只有在按快捷键时 AI API 才被请求。已设置 API 的旧用户不需要重复填入密钥。
+清理保留密钥、配置、记录和 Rime 词库；共享 pip 缓存、Argos 模型需要单独选项。见 [升级与清理](docs/UPGRADE_CLEANUP.md)、[手动验收](docs/MANUAL_TEST.md)、[开发与构建](docs/DEVELOPMENT.md) 和 [更新记录](CHANGELOG.md)。
 
-**所有安装与同步命令默认不修改活动中的 Rime 输入法。** 在确认原生 Rime 正常后，明确选择启用：
+GitHub Actions 在 Ubuntu 24.04 运行单元测试、包安装、真实 Rime / IBus / GTK、GNOME 46 Wayland 焦点与发送、模拟 AI 故障及断网模型测试；不使用 WSL。实际云端质量和用户虚拟机 / 应用仍需手动验收。
 
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now rime-llm-translator.service
-rime-llm-translator enable
-```
+## 源码与许可
 
-重新部署朙月拼音并注销登录，使 Lua 过滤器和快捷键处理器生效。新增 `engine/filters/+` 过滤器与位于前端的 `engine/processors/@before 0` 按键监听器，非匹配按键放行。
-
-### 卸载插件/恢复原生输入
-
-```bash
-rime-llm-translator disable
-systemctl --user disable --now rime-llm-translator.service
-```
-
-重新部署 Rime 让已编译的方案清除插件引用，必要时注销登录；只撤销本项目的 Lua 过滤器/Processor 配置，不删 API Key。不要直接卸载 ibus-rime。
-
-## 语言选择与离线配置
-
-`config.ini` 中：
-
-```ini
-[translation]
-enabled = true
-offline_enabled = true
-languages = en:English,ja:Japanese
-min_characters = 1
-debounce_ms = 450
-source_language = auto
-```
-
-`source_language` 可填 `auto`、`zh`（简体）或 `zt`（繁体）。自动识别无法区分所有简繁共用字，**使用繁体朙月拼音的用户建议明确改为 `zt`**。目标语言扩展前必须安装对应 Argos 离线模型包；当前 `install-offline` 自动安装的只有中英、繁英和英日。其他目标语言可通过 argospm 自行安装。
-
-后台服务自动切换到专用 `~/.local/share/rime-llm-translator/venv` Python 环境，不依赖系统 pip，避免 Ubuntu 24.04 的 PEP 668 限制。
-
-## 隐私和资源消耗
-
-- **普通机翻**不上传输入文本；API Key 只在显式 AI 请求时读取。
-- 同一中文文本的机器翻译与 AI 结果分别缓存；重复触发已完成的 AI 请求不产生额外 API Token。
-- 输入法候选可包含敏感内容；如果主动触发 AI，当前中文候选会被发送到所配置的云模型。
-- 本地 Argos 运行依赖 CPU 和内存；不同语言包会占用额外存储，首次载入较慢，虚拟机应预留足够资源。
-- 真实 librime 测试覆盖中文候选、缓存机器翻译、显式热键请求和缓存 AI 覆盖。**Ubuntu 图形候选即时重绘、真实 Argos 模型下载/推理质量和实际云端 API 尚需实机验证**。不建议在关键输入环境中直接试用未验证版本。
-
-## 检查
-
-```bash
-rime-llm-translator doctor
-systemctl --user status rime-llm-translator.service
-journalctl --user -u rime-llm-translator.service -n 30 --no-pager
-```
+前端基于 GPLv3-or-later [ibus-rime 1.5.0](https://github.com/rime/ibus-rime/tree/d525f18b45123869af0055cc8402d459ebdbb9e3)，源码和许可位于 [frontend/](frontend/) 及安装包。Mozilla 推理依赖完整源码和许可随包提供于 `/usr/share/doc/rime-llm-translator/inference-source.tar.xz`，并附包装代码与锁定修订。Mozilla 模型按 MPL 2.0 分发，校验值和许可在 [models.lock.json](native/mt/models.lock.json)；第三方组件保留各自许可。根目录 Ollama Lua 为未参与安装运行的上游原型。

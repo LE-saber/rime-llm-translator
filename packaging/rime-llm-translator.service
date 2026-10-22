@@ -1,11 +1,15 @@
 [Unit]
-Description=Rime LLM Translator background worker
-After=network-online.target
-Wants=network-online.target
+Description=Rime offline translation worker
+Wants=rime-llm-ai.service
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/rime-llm-translator serve
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+Environment=MALLOC_ARENA_MAX=2
+Nice=10
+CPUQuota=100%
 Restart=on-failure
 RestartSec=3
 UMask=0077

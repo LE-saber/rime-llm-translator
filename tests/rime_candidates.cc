@@ -40,12 +40,15 @@ int main(int argc, char** argv) {
   bool labeled_translation = argc == 3;
   bool valid = rime->get_context(session, &ctx);
   bool has_candidates = valid && ctx.menu.num_candidates > 0;
+  bool has_native = false;
   if (valid) {
     std::cout << "preedit: " << (ctx.composition.preedit ? ctx.composition.preedit : "(none)") << "\n";
     std::cout << "candidate count: " << ctx.menu.num_candidates << "\n";
     for (int i = 0; i < ctx.menu.num_candidates; ++i) {
-      if (ctx.menu.candidates[i].text)
+      if (ctx.menu.candidates[i].text) {
         std::cout << "candidate " << i << ": " << ctx.menu.candidates[i].text << "\n";
+        if (std::string(ctx.menu.candidates[i].text) == "你好") has_native = true;
+      }
     }
     if (argc >= 4) {
       for (int i = 0; i < ctx.menu.num_candidates; ++i) {
@@ -61,6 +64,12 @@ int main(int argc, char** argv) {
     rime->free_context(&ctx);
   }
   if (argc >= 5) {
+    if (std::ifstream(argv[4]).good()) {
+      std::cerr << "FAIL: normal typing enqueued AI before the hotkey\n";
+      rime->destroy_session(session);
+      rime->finalize();
+      return 1;
+    }
     // X11 Return keysym; ShiftMask | ControlMask.
     rime->process_key(session, 0xff0d, 5);
     std::ifstream request(argv[4]);
@@ -74,7 +83,7 @@ int main(int argc, char** argv) {
   }
   rime->destroy_session(session);
   rime->finalize();
-  if (!has_candidates) {
+  if (!has_candidates || !has_native) {
     std::cerr << "FAIL: Chinese candidate menu disappeared\n";
     return 1;
   }

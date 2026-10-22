@@ -17,7 +17,7 @@ cfg.write_text(
     encoding="utf-8"
 )
 original = "你好"
-identity = original + "|en:English,ja:Japanese|deepseek-chat|https://api.deepseek.com"
+identity = original + "|en:English,ja:Japanese|deepseek-chat|https://api.deepseek.com|auto|bergamot-v1"
 a, b = 5381, 0
 for byte in identity.encode("utf-8"):
     a = (a * 33 + byte) % (1 << 32)

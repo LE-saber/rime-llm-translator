@@ -32,7 +32,9 @@ end
 local function identifier(text, langs, opts)
   local data = text .. "|" .. langs .. "|" ..
       (opts["provider.model"] or "") .. "|" ..
-      (opts["provider.base_url"] or "")
+      (opts["provider.base_url"] or "") .. "|" ..
+      (opts["translation.source_language"] or "auto") .. "|" ..
+      (opts["translation.offline_revision"] or "bergamot-v1")
   local a,b = 5381,0
   for i=1,#data do
     local n = data:byte(i)
@@ -71,20 +73,21 @@ local function request(filename, id, text)
 end
 
 local function current_source(first, env)
-  -- Optional: a user may highlight another Chinese candidate before AI hotkey.
   if env and env.engine and env.engine.context then
-    local ok, cand = pcall(function()
-      return env.engine.context:get_selected_candidate()
-    end)
-    if ok and cand and cand.text and cand.type and
-        not tostring(cand.type):match("^llm_") then
-      return cand
+    local ctx = env.engine.context
+    if ctx:get_property("rime_llm_source_input") == ctx.input then
+      local text = ctx:get_property("rime_llm_source")
+      if text ~= "" then
+        return {text=text, start=first.start, _end=first._end}
+      end
     end
   end
   return first
 end
 
 local function enrich(first, env)
+  if env and env.engine and env.engine.context and
+      env.engine.context:get_property("rime_llm_panel") == "true" then return end
   if not home or home == "" then return end
   local opts = config()
   if (opts["translation.enabled"] or "false"):lower() ~= "true" then return end
@@ -98,6 +101,9 @@ local function enrich(first, env)
   end
   local langs = opts["translation.languages"] or "en:English,ja:Japanese"
   local id = identifier(text,langs,opts)
+  if env and env.engine and env.engine.context then
+    env.engine.context:set_property("rime_llm_id", id)
+  end
   local mt = translations(cache_dir .. "/results-mt/" .. id .. ".res")
   local ai = translations(cache_dir .. "/results-ai/" .. id .. ".res")
   local missing_mt = false
