@@ -190,11 +190,24 @@ try:
     wait(lambda: not editor.queued and editor.get_visible(), "unrelated focus cancels send and preserves editor")
     assert other_commits == [] and len(target_commits) == 1
     # Source edit during AI send cancels the pending submission, including stale HTTP.
+    other.focus_out()
+    focus(target)
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token, "rebind original target after cancellation")
+    target.focus_out()
+    focus(editor_context)
     editor.cfg["panel"]["auto_ai_send"] = "true"
+    before_calls = cloud["calls"]
     editor.send()
+    wait(lambda: cloud["calls"] > before_calls, "AI send request is in flight")
     editor.buffer.set_text("改了，不能发送旧译文。")
     pump(1)
     assert not editor.queued and editor.send_mode is None
+    cloud["fail"] = True
+    editor.send()
+    wait(lambda: editor.send_mode is None and "失败" in editor.message.get_text(), "HTTP failure retains source without MT fallback")
+    assert not editor.queued and len(target_commits) == 1 and editor.text() == "改了，不能发送旧译文。"
+    cloud["fail"] = False
     # GUI settings can save safely without replacing a blank API key.
     dialog = gui.Settings(editor)
     dialog.show_all()
@@ -213,6 +226,16 @@ try:
     editor.remember()
     assert json.loads(gui.DATA_PATH.read_text())["history"]
     assert gui.DATA_PATH.stat().st_mode & 0o077 == 0
+    shell = bus.create_input_context("gnome-shell")
+    shell.set_capabilities(1 | 2 | 4 | 8)
+    editor_context.focus_out()
+    focus(shell)
+    token = gui.call_bridge("Open")
+    wait(lambda: editor.token == token and not editor.target_supported, "shared Wayland context refuses direct submission")
+    calls = cloud["calls"]
+    editor.send()
+    pump(.3)
+    assert not editor.send_button.get_sensitive() and cloud["calls"] == calls
     print("PASS: GUI settings, theme, key retention, private history and safe cancellation", flush=True)
     editor.close_panel()
 finally:

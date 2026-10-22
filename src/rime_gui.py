@@ -282,6 +282,16 @@ class EditorWindow(Gtk.ApplicationWindow):
         if not self.token:
             self.show_message("请从目标输入框打开长文本模式，再发送")
             return
+        if not self.target_supported:
+            self.show_message("此目标不支持安全直接发送，请在译文中右键复制")
+            return
+        try:
+            if call_bridge("State", "(s)", (self.token,)) != "editing":
+                self.show_message("发送目标已失效，请从原输入框重新打开；原文已保留")
+                return
+        except GLib.Error:
+            self.show_message("输入法连接已失效，请重新打开长文本；原文已保留")
+            return
         mode, text = self.draft.begin_send(self.cfg.getboolean("panel", "auto_ai_send"))
         self.send_mode = mode
         if text:
