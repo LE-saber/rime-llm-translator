@@ -140,6 +140,9 @@ try:
     editor.draft.results["mt"] = "Hello, world!"
     editor.send()
     wait(lambda: not editor.queued, "send completes after automatic focus restoration")
+    print("Send outcome:", gui.call_bridge("State", "(s)", (token,)),
+          gui.call_bridge("Focus"), editor.message.get_text(), flush=True)
+    wait(lambda: target_text() == "Hello, world!", "translation reached the real native Wayland text buffer", 4)
     assert target_text() == "Hello, world!", target_text()
     assert gui.call_bridge("State", "(s)", (token,)) == "sent"
     print("PASS: real Wayland target received exactly the translation, once", flush=True)
@@ -163,6 +166,8 @@ try:
     assert target_text() == "Hello, world!"
     assert gui.call_bridge("State", "(s)", (token,)) != "sent"
     print("PASS: unrelated window invalidates lease even with shared IBus ID", flush=True)
+    editor.close_panel()
+    wait(lambda: shell("!global.get_window_actors().some(a => a.meta_window.get_title() === 'Rime Translator · 长文本')"), "cancelled panel withdrawn before reopening target")
     shell("global.get_window_actors().find(a => a.meta_window.get_title() === 'Wayland translation target').meta_window.activate(global.get_current_time()); true")
     wait(lambda: "focused=1 client=gnome-shell" in gui.call_bridge("Focus"), "original target focused for closed-window test")
     # Closing the original target invalidates the compositor lease. The draft

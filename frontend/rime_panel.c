@@ -272,6 +272,9 @@ static void method(GDBusConnection* conn, const gchar* sender, const gchar* path
       return;
     }
     pending = g_strdup(text);
+    /* Hiding GTK may immediately focus the old app, before Restore reaches
+       Shell. Do not race Submit against establishing the restoration lease. */
+    shell_busy = shell_target;
     expires = g_get_monotonic_time() + 8000000;
     status = "waiting";
   } else if (!strcmp(name, "Cancel")) cancel();
