@@ -1,7 +1,6 @@
 """On-demand GTK3 editor/settings; no web runtime and no network on typing."""
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
@@ -78,6 +77,7 @@ class EditorWindow(Gtk.ApplicationWindow):
         self.token, self.queued, self.send_mode = None, False, None
         self.target_supported = True
         self.hidden_at, self.debounce = None, 0
+        self.recalling = False
         self.taps = TapMatcher()
         try:
             data = json.loads(DATA_PATH.read_text(encoding="utf-8"))
@@ -233,6 +233,8 @@ class EditorWindow(Gtk.ApplicationWindow):
     def changed(self, *_):
         if not hasattr(self, "languages") or getattr(self, "refreshing", False):
             return
+        if not self.recalling:
+            self.history.index = -1
         self.draft.edit(self.text(), self.languages.get_active_id() or "en")
         self.send_mode = None
         for mode in ("mt", "ai"):
@@ -417,10 +419,6 @@ class EditorWindow(Gtk.ApplicationWindow):
         if gesture and self.action(gesture):
             return True
         binding = key_binding(event)
-        if binding and not (event.state & Gdk.ModifierType.MOD1_MASK):
-            # Editing after recall starts a new unsent draft.
-            if binding not in ("Up", "Down", "up", "down"):
-                self.history.index = -1
         if binding and self.action(binding):
             return True
         # Normal multiline cursor movement and composing candidates keep Up/Down.
@@ -432,7 +430,9 @@ class EditorWindow(Gtk.ApplicationWindow):
             boundary = (up and cursor.get_line() == 0) or (down and cursor.get_line() == self.buffer.get_line_count() - 1)
             if (up or down) and not has_selection and (boundary or self.history.index >= 0):
                 recalled = self.history.move(-1 if up else 1, self.text())
+                self.recalling = True
                 self.buffer.set_text(recalled)
+                self.recalling = False
                 return True
         return Gtk.ApplicationWindow.do_key_press_event(self, event)
 

@@ -58,7 +58,9 @@ void rime_panel_focus(IBusEngine* engine, const char* context, const char* clien
   alt_count = 0; alt_down = 0; alt_last = 0;
   /* Never submit into an unrelated context, even if the user returns later. */
   if (pending && g_strcmp0(target_id, context) &&
-      !g_str_has_suffix(client, ":rime-llm-panel")) cancel();
+      strcmp(client, "fake") && !g_str_has_suffix(client, ":rime-llm-panel")) cancel();
+  /* IBus briefly focuses its internal fake context while a window hides.
+     It is not a new text field and must not cancel restoration of the target. */
 }
 
 void rime_panel_blur(IBusEngine* engine) {
@@ -112,6 +114,9 @@ void rime_panel_open(IBusEngine* engine) {
   const char* seed = "";
   if (rime_api->get_context(session, &ctx)) {
     int i = ctx.menu.highlighted_candidate_index;
+    if (i >= 0 && i < ctx.menu.num_candidates && ctx.menu.candidates[i].comment &&
+        (strstr(ctx.menu.candidates[i].comment, " MT · ") ||
+         strstr(ctx.menu.candidates[i].comment, " AI · "))) i = 0;
     if (ctx.composition.length && i >= 0 && i < ctx.menu.num_candidates)
       seed = ctx.menu.candidates[i].text;
   }
