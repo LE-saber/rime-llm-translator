@@ -110,6 +110,7 @@ try:
     os.environ["WAYLAND_DISPLAY"] = display
     sys.path.insert(0, "/usr/share/rime-llm-translator")
     import rime_gui as gui
+    GLib.set_prgname("rime-llm-panel")
     cfg = gui.core.config_default()
     gui.core.save_config(cfg)
     app = gui.Application()
@@ -126,7 +127,10 @@ try:
                 "im.rime.LLMTranslator.Shell", "Submit", "(ss)", (token, "unauthorized")) == ("cancelled",)
     assert target_text() == ""
     wait(lambda: shell("global.get_window_actors().some(a => a.meta_window.get_title() === 'Rime Translator · 长文本' && a.meta_window.above && a.meta_window.skip_taskbar)"), "floating panel is above and excluded from taskbar")
+    wait(lambda: shell("global.display.focus_window?.get_title() === 'Rime Translator · 长文本'"), "opening focuses the floating editor")
     assert not editor.get_decorated()
+    screenshot = gui.Gdk.pixbuf_get_from_window(editor.get_window(), 0, 0, *editor.get_size())
+    screenshot.savev(str(root / "dist/native-wayland.png"), "png", [], [])
     editor.buffer.set_text("你好，世界")
     if editor.debounce:
         GLib.source_remove(editor.debounce)

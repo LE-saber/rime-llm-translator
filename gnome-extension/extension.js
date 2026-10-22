@@ -36,6 +36,7 @@ export default class RimeTranslator extends Extension {
             const window = actor.meta_window;
             if (isPanel(window) && window.get_title() === 'Rime Translator · 长文本') {
                 window.make_above();
+                Main.activateWindow(window);
                 // GTK supplies the X11 utility/skip-taskbar hints, including on
                 // Xwayland. Wayland native windows get compositor-level above.
             }
