@@ -1,6 +1,6 @@
 # Rime LLM Translator
 
-[中文说明](README_CN.md) · [Download v0.3.0](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [Changelog](CHANGELOG.md)
+[English](README.md) · [简体中文](README_CN.md) · [繁體中文](https://github.com/LE-saber/rime-llm-translator/blob/main/README.zh-TW.md) · [日本語](https://github.com/LE-saber/rime-llm-translator/blob/main/README.ja.md) · [Download v0.3.0](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [Changelog](CHANGELOG.md)
 
 Chinese input, lightweight offline translation and optional cloud AI for **Ubuntu 24.04 amd64, GNOME 46, IBus and Luna Pinyin**. Traditional Chinese remains available. Windows and other desktops are outside this release's supported scope.
 

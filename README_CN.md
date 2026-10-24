@@ -1,6 +1,6 @@
 # Rime LLM Translator
 
-[English](README.md) · [下载 v0.3.0 正式版](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [更新记录](CHANGELOG.md)
+[English](README.md) · [简体中文](README_CN.md) · [繁體中文](https://github.com/LE-saber/rime-llm-translator/blob/main/README.zh-TW.md) · [日本語](https://github.com/LE-saber/rime-llm-translator/blob/main/README.ja.md) · [下载 v0.3.0 正式版](https://github.com/LE-saber/rime-llm-translator/releases/tag/v0.3.0) · [更新记录](CHANGELOG.md)
 
 为 **Ubuntu 24.04 amd64、GNOME 46、IBus / 朙月拼音**提供轻量离线翻译、可编辑长文本悬浮框和可选云端 AI。保留普通中文及繁体输入。本版本不支持 Windows，其他桌面环境不在支持范围内。
 
